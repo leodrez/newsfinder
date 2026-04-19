@@ -1,0 +1,39 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- Environment and local config ---
+.env
+.env.*
+!.env.example
+*.local
+
+# --- Logs ---
+*.log
+logs/
+
+# --- Frontend / Node ---
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+
+# --- IDE / OS files ---
+.DS_Store
+.idea/
+.vscode/
+

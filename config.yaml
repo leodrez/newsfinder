@@ -1,0 +1,45 @@
+polling_interval_seconds: 20
+
+llm:
+  model: claude-haiku-4-5-20251001
+  # Max batch size: when say 12 new headlines arrive in a polling cycle, they get split into 3 batches (5 + 5 + 2) and each batch is scored in a separate API call.
+  max_batch_size: 5
+  # default_market_focus: "US equities, S&P 500, major tech stocks"
+  default_market_focus: "S&P 500 (SPY, ES) and Nasdaq 100 (QQQ, NQ) index futures and ETFs. Interested in: Fed rate decisions, CPI/PPI/jobs data, big tech earnings (AAPL, MSFT, NVDA, GOOGL, AMZN, META, TSLA), geopolitical shocks, oil/energy disruptions, Treasury yields, and sector rotation signals."  
+
+feeds:
+  - name: Reuters Business
+    url: https://www.reutersagency.com/feed/?best-topics=business-finance&post_type=best
+    type: rss
+
+  - name: CNBC Top News
+    url: https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114
+    type: rss
+
+  - name: CNBC World News
+    url: https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100727362
+    type: rss
+
+  - name: MarketWatch Top Stories
+    url: https://feeds.marketwatch.com/marketwatch/topstories/
+    type: rss
+
+  - name: MarketWatch Market Pulse
+    url: https://feeds.marketwatch.com/marketwatch/marketpulse/
+    type: rss
+
+  - name: AP News Business
+    url: https://rsshub.app/apnews/topics/business
+    type: rss
+
+  - name: Yahoo Finance
+    url: https://finance.yahoo.com/news/rssindex
+    type: rss
+
+  - name: Federal Reserve
+    url: https://www.federalreserve.gov/feeds/press_all.xml
+    type: rss
+
+  - name: Finviz News
+    url: https://finviz.com/news.ashx
+    type: scrape
