@@ -42,7 +42,7 @@ function filterHeadlines(items: HeadlineItem[], filters: FilterValue[]): Headlin
 }
 
 export default function App() {
-  const { headlines, wsStatus, llmStatus, marketFocus, setMarketFocus, newBatch } =
+  const { headlines, wsStatus, llmStatus, marketFocus, setMarketFocus, newBatch, pollingEnabled, setPollingEnabled } =
     useWebSocket()
   const [filter, setFilter] = useState<FilterValue[]>(["all"])
   const [viewMode, setViewMode] = useState<ViewMode>("list")
@@ -99,6 +99,8 @@ export default function App() {
         onViewModeChange={setViewMode}
         sortOrder={sortOrder}
         onSortOrderChange={setSortOrder}
+        pollingEnabled={pollingEnabled}
+        onPollingToggle={setPollingEnabled}
       />
       <FilterBar filter={filter} onFilterChange={setFilter} totalCount={filtered.length} />
 

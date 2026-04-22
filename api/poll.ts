@@ -10,8 +10,18 @@ import type { ScoredHeadline } from "../lib/types"
 
 export const config = { maxDuration: 60 }
 
-async function runPoll(): Promise<{ stored: number }> {
+async function runPoll(): Promise<{ stored: number; skipped?: boolean }> {
   const supabase = getSupabase()
+
+  // Check if polling is enabled before doing any work
+  const { data: flagRow } = await supabase
+    .from("config")
+    .select("value")
+    .eq("key", CONFIG_KEYS.pollingEnabled)
+    .single()
+  if (flagRow?.value === "false") {
+    return { stored: 0, skipped: true }
+  }
 
   // Fetch all feeds in parallel
   const rssFeeds = feeds.filter((f) => f.type === "rss")

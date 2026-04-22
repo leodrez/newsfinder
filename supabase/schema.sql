@@ -50,9 +50,10 @@ CREATE TABLE IF NOT EXISTS config (
 
 -- Seed defaults
 INSERT INTO config (key, value) VALUES
-  ('market_focus', 'S&P 500 (SPY, ES) and Nasdaq 100 (QQQ, NQ) index futures and ETFs. Interested in: Fed rate decisions, CPI/PPI/jobs data, big tech earnings (AAPL, MSFT, NVDA, GOOGL, AMZN, META, TSLA), geopolitical shocks, oil/energy disruptions, Treasury yields, and sector rotation signals.'),
-  ('llm_model',    'claude-haiku-4-5-20251001'),
-  ('last_poll_ts', '0')
+  ('market_focus',    'S&P 500 (SPY, ES) and Nasdaq 100 (QQQ, NQ) index futures and ETFs. Interested in: Fed rate decisions, CPI/PPI/jobs data, big tech earnings (AAPL, MSFT, NVDA, GOOGL, AMZN, META, TSLA), geopolitical shocks, oil/energy disruptions, Treasury yields, and sector rotation signals.'),
+  ('llm_model',       'claude-haiku-4-5-20251001'),
+  ('last_poll_ts',    '0'),
+  ('polling_enabled', 'true')
 ON CONFLICT (key) DO NOTHING;
 
 -- RLS: no public access

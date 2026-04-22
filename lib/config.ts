@@ -66,4 +66,5 @@ export const CONFIG_KEYS = {
   marketFocus: "market_focus",
   llmModel: "llm_model",
   lastPollTs: "last_poll_ts",
+  pollingEnabled: "polling_enabled",
 } as const

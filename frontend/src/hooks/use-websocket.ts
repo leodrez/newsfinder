@@ -18,7 +18,6 @@ export interface LlmStatus {
   model: string
 }
 
-// Keeps the same shape as before so App.tsx needs no changes.
 type WsStatus = "connecting" | "connected" | "disconnected"
 
 interface UseWebSocketReturn {
@@ -28,6 +27,8 @@ interface UseWebSocketReturn {
   marketFocus: string
   setMarketFocus: (focus: string) => void
   newBatch: HeadlineItem[]
+  pollingEnabled: boolean
+  setPollingEnabled: (enabled: boolean) => void
 }
 
 const API_BASE = import.meta.env.VITE_API_URL ?? ""
@@ -38,6 +39,8 @@ export function useWebSocket(): UseWebSocketReturn {
   const [llmStatus, setLlmStatus] = useState<LlmStatus>({ status: "unknown", model: "" })
   const [marketFocus, setMarketFocusState] = useState("")
   const [newBatch, setNewBatch] = useState<HeadlineItem[]>([])
+
+  const [pollingEnabled, setPollingEnabledState] = useState(true)
 
   const channelRef = useRef<RealtimeChannel | null>(null)
   const isFirstLoad = useRef(true)
@@ -60,10 +63,11 @@ export function useWebSocket(): UseWebSocketReturn {
         }
         isFirstLoad.current = false
 
-        // Load LLM status + market focus from API routes
-        const [statusRes, focusRes] = await Promise.all([
+        // Load LLM status, market focus, and polling state from API routes
+        const [statusRes, focusRes, pollingRes] = await Promise.all([
           fetch(`${API_BASE}/api/status`),
           fetch(`${API_BASE}/api/focus`),
+          fetch(`${API_BASE}/api/polling`),
         ])
         if (statusRes.ok) {
           const data = await statusRes.json()
@@ -72,6 +76,10 @@ export function useWebSocket(): UseWebSocketReturn {
         if (focusRes.ok) {
           const data = await focusRes.json()
           setMarketFocusState(data.value ?? "")
+        }
+        if (pollingRes.ok) {
+          const data = await pollingRes.json()
+          setPollingEnabledState(data.enabled ?? true)
         }
 
         setWsStatus("connected")
@@ -125,5 +133,78 @@ export function useWebSocket(): UseWebSocketReturn {
     }).catch(console.warn)
   }, [])
 
-  return { headlines, wsStatus, llmStatus, marketFocus, setMarketFocus, newBatch }
+  // ── Polling toggle ──────────────────────────────────────────────────────────
+
+  const setPollingEnabled = useCallback((enabled: boolean) => {
+    setPollingEnabledState(enabled) // optimistic
+    fetch(`${API_BASE}/api/polling`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    }).catch(console.warn)
+  }, [])
+
+  // ── Auto-pause: tab hidden / closed ────────────────────────────────────────
+  // keepalive:true makes the fetch survive tab close / navigation.
+
+  useEffect(() => {
+    function postPolling(enabled: boolean, keepalive = false) {
+      fetch(`${API_BASE}/api/polling`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+        keepalive,
+      }).catch(() => {})
+    }
+
+    function handleVisibility() {
+      if (document.visibilityState === "hidden") {
+        setPollingEnabledState(false)
+        postPolling(false, true) // keepalive so it fires even on tab close
+      } else {
+        setPollingEnabledState(true)
+        postPolling(true)
+      }
+    }
+
+    document.addEventListener("visibilitychange", handleVisibility)
+    return () => document.removeEventListener("visibilitychange", handleVisibility)
+  }, [])
+
+  // ── Auto-pause: inactivity (30 minutes) ────────────────────────────────────
+  // Any mouse/keyboard/touch activity resets the timer and resumes polling.
+
+  const pollingEnabledRef = useRef(pollingEnabled)
+  useEffect(() => { pollingEnabledRef.current = pollingEnabled }, [pollingEnabled])
+
+  useEffect(() => {
+    const INACTIVITY_MS = 30 * 60 * 1000
+    let timer: ReturnType<typeof setTimeout> | null = null
+
+    function schedule() {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => {
+        if (pollingEnabledRef.current) setPollingEnabled(false)
+      }, INACTIVITY_MS)
+    }
+
+    function handleActivity() {
+      // Resume only if tab is visible (don't fight the visibility handler)
+      if (!pollingEnabledRef.current && document.visibilityState === "visible") {
+        setPollingEnabled(true)
+      }
+      schedule()
+    }
+
+    const events = ["mousemove", "keydown", "click", "scroll", "touchstart"] as const
+    events.forEach((e) => window.addEventListener(e, handleActivity, { passive: true }))
+    schedule() // start the clock immediately
+
+    return () => {
+      events.forEach((e) => window.removeEventListener(e, handleActivity))
+      if (timer) clearTimeout(timer)
+    }
+  }, [setPollingEnabled]) // setPollingEnabled is stable (useCallback with [] deps)
+
+  return { headlines, wsStatus, llmStatus, marketFocus, setMarketFocus, newBatch, pollingEnabled, setPollingEnabled }
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react"
-import { Moon, Sun, List, Clock, Wifi, WifiOff, Brain, ArrowDownUp } from "lucide-react"
+import { Moon, Sun, List, Clock, Wifi, WifiOff, Brain, ArrowDownUp, Pause, Play } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import {
@@ -22,6 +22,8 @@ interface HeaderProps {
   onViewModeChange: (mode: "list" | "timeline") => void
   sortOrder: SortOrder
   onSortOrderChange: (order: SortOrder) => void
+  pollingEnabled: boolean
+  onPollingToggle: (enabled: boolean) => void
 }
 
 export function Header({
@@ -33,6 +35,8 @@ export function Header({
   onViewModeChange,
   sortOrder,
   onSortOrderChange,
+  pollingEnabled,
+  onPollingToggle,
 }: HeaderProps) {
   const { setTheme } = useTheme()
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -107,6 +111,21 @@ export function Header({
           }
         >
           <ArrowDownUp className={`h-3.5 w-3.5 transition-transform ${sortOrder === "oldest-first" ? "rotate-180" : ""}`} />
+        </Button>
+
+        {/* Polling pause/resume */}
+        <Button
+          variant={pollingEnabled ? "ghost" : "secondary"}
+          size="icon"
+          className="h-7 w-7"
+          onClick={() => onPollingToggle(!pollingEnabled)}
+          title={pollingEnabled ? "Pause polling (stop fetching news)" : "Resume polling"}
+        >
+          {pollingEnabled ? (
+            <Pause className="h-3.5 w-3.5" />
+          ) : (
+            <Play className="h-3.5 w-3.5 text-emerald-500" />
+          )}
         </Button>
 
         <div className="w-px h-4 bg-border mx-1" />
