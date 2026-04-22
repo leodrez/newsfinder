@@ -144,39 +144,14 @@ export function useWebSocket(): UseWebSocketReturn {
     }).catch(console.warn)
   }, [])
 
-  // ── Auto-pause: inactivity (30 minutes) ────────────────────────────────────
-  // Any mouse/keyboard/touch activity resets the timer and resumes polling.
-
-  const pollingEnabledRef = useRef(pollingEnabled)
-  useEffect(() => { pollingEnabledRef.current = pollingEnabled }, [pollingEnabled])
+  // ── Auto-pause: 30 minutes after polling is enabled ────────────────────────
+  // Resets automatically whenever polling is manually turned back on.
 
   useEffect(() => {
-    const INACTIVITY_MS = 30 * 60 * 1000
-    let timer: ReturnType<typeof setTimeout> | null = null
-
-    function schedule() {
-      if (timer) clearTimeout(timer)
-      timer = setTimeout(() => {
-        if (pollingEnabledRef.current) setPollingEnabled(false)
-      }, INACTIVITY_MS)
-    }
-
-    function handleActivity() {
-      if (!pollingEnabledRef.current) {
-        setPollingEnabled(true)
-      }
-      schedule()
-    }
-
-    const events = ["mousemove", "keydown", "scroll", "touchstart"] as const
-    events.forEach((e) => window.addEventListener(e, handleActivity, { passive: true }))
-    schedule() // start the clock immediately
-
-    return () => {
-      events.forEach((e) => window.removeEventListener(e, handleActivity))
-      if (timer) clearTimeout(timer)
-    }
-  }, [setPollingEnabled]) // setPollingEnabled is stable (useCallback with [] deps)
+    if (!pollingEnabled) return
+    const timer = setTimeout(() => setPollingEnabled(false), 30 * 60 * 1000)
+    return () => clearTimeout(timer)
+  }, [pollingEnabled, setPollingEnabled])
 
   return { headlines, wsStatus, llmStatus, marketFocus, setMarketFocus, newBatch, pollingEnabled, setPollingEnabled }
 }
