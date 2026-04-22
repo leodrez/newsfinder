@@ -37,3 +37,4 @@ frontend/dist-ssr/
 .idea/
 .vscode/
 
+.vercel

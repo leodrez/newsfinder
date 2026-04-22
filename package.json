@@ -1,0 +1,20 @@
+{
+  "name": "newsfinder",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build:frontend": "cd frontend && npm install && npm run build"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.52.0",
+    "@supabase/supabase-js": "^2.49.4",
+    "@upstash/qstash": "^2.7.21",
+    "cheerio": "^1.0.0",
+    "rss-parser": "^3.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "@vercel/node": "^5.7.13",
+    "typescript": "^5.8.3"
+  }
+}

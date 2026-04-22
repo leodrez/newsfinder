@@ -1,8 +1,0 @@
-fastapi
-uvicorn[standard]
-httpx
-feedparser
-beautifulsoup4
-anthropic
-python-dotenv
-pyyaml

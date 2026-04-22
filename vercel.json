@@ -1,0 +1,27 @@
+{
+  "buildCommand": "cd frontend && npm install && npm run build",
+  "outputDirectory": "frontend/dist",
+  "devCommand": "cd frontend && npm run dev --port 3001",
+  "installCommand": "npm install",
+  "functions": {
+    "api/poll.ts": {
+      "maxDuration": 60
+    },
+    "api/focus.ts": {
+      "maxDuration": 10
+    },
+    "api/status.ts": {
+      "maxDuration": 10
+    }
+  },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET, POST, OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Upstash-Signature" }
+      ]
+    }
+  ]
+}

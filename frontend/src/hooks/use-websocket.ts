@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
+import { supabase } from "@/lib/supabase"
+import type { RealtimeChannel } from "@supabase/supabase-js"
 
 export interface HeadlineItem {
   title: string
@@ -16,6 +18,7 @@ export interface LlmStatus {
   model: string
 }
 
+// Keeps the same shape as before so App.tsx needs no changes.
 type WsStatus = "connecting" | "connected" | "disconnected"
 
 interface UseWebSocketReturn {
@@ -27,8 +30,7 @@ interface UseWebSocketReturn {
   newBatch: HeadlineItem[]
 }
 
-const WS_URL = "ws://localhost:8000/ws"
-const RECONNECT_DELAY = 2000
+const API_BASE = import.meta.env.VITE_API_URL ?? ""
 
 export function useWebSocket(): UseWebSocketReturn {
   const [headlines, setHeadlines] = useState<HeadlineItem[]>([])
@@ -36,64 +38,91 @@ export function useWebSocket(): UseWebSocketReturn {
   const [llmStatus, setLlmStatus] = useState<LlmStatus>({ status: "unknown", model: "" })
   const [marketFocus, setMarketFocusState] = useState("")
   const [newBatch, setNewBatch] = useState<HeadlineItem[]>([])
-  const wsRef = useRef<WebSocket | null>(null)
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const channelRef = useRef<RealtimeChannel | null>(null)
   const isFirstLoad = useRef(true)
 
-  const connect = useCallback(() => {
-    setWsStatus("connecting")
+  // ── Initial bootstrap ──────────────────────────────────────────────────────
 
-    const ws = new WebSocket(WS_URL)
-    wsRef.current = ws
+  useEffect(() => {
+    async function bootstrap() {
+      try {
+        // Load last 200 headlines directly from Supabase (anon key, RLS allows SELECT)
+        const { data: rows, error } = await supabase
+          .from("headlines")
+          .select("title, url, source, published_ts, fetched_ts, relevance, impact, summary")
+          .order("fetched_ts", { ascending: true })
+          .limit(200)
 
-    ws.onopen = () => {
-      setWsStatus("connected")
-    }
-
-    ws.onmessage = (event) => {
-      const msg = JSON.parse(event.data)
-
-      if (msg.type === "headlines") {
-        const items: HeadlineItem[] = msg.items
-        setHeadlines((prev) => {
-          const updated = [...prev, ...items]
-          return updated.slice(-200)
-        })
-        if (!isFirstLoad.current) {
-          setNewBatch(items)
+        if (error) throw error
+        if (rows?.length) {
+          setHeadlines(rows as HeadlineItem[])
         }
         isFirstLoad.current = false
-      } else if (msg.type === "llm_status") {
-        setLlmStatus({ status: msg.status, model: msg.model })
-      } else if (msg.type === "focus") {
-        setMarketFocusState(msg.value)
+
+        // Load LLM status + market focus from API routes
+        const [statusRes, focusRes] = await Promise.all([
+          fetch(`${API_BASE}/api/status`),
+          fetch(`${API_BASE}/api/focus`),
+        ])
+        if (statusRes.ok) {
+          const data = await statusRes.json()
+          setLlmStatus(data.llm ?? { status: "unknown", model: "" })
+        }
+        if (focusRes.ok) {
+          const data = await focusRes.json()
+          setMarketFocusState(data.value ?? "")
+        }
+
+        setWsStatus("connected")
+      } catch (err) {
+        console.warn("[bootstrap] Error:", err)
+        setWsStatus("disconnected")
       }
     }
 
-    ws.onclose = () => {
-      setWsStatus("disconnected")
-      wsRef.current = null
-      reconnectTimer.current = setTimeout(connect, RECONNECT_DELAY)
-    }
+    bootstrap()
+  }, [])
 
-    ws.onerror = () => {
-      ws.close()
+  // ── Supabase Realtime subscription ─────────────────────────────────────────
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("headlines-inserts")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "headlines" },
+        (payload) => {
+          const item = payload.new as HeadlineItem
+          setHeadlines((prev) => [...prev, item].slice(-200))
+          if (!isFirstLoad.current) {
+            setNewBatch([item])
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") setWsStatus("connected")
+        if (status === "TIMED_OUT" || status === "CLOSED" || status === "CHANNEL_ERROR") {
+          setWsStatus("disconnected")
+        }
+      })
+
+    channelRef.current = channel
+
+    return () => {
+      supabase.removeChannel(channel)
     }
   }, [])
 
-  useEffect(() => {
-    connect()
-    return () => {
-      if (reconnectTimer.current) clearTimeout(reconnectTimer.current)
-      wsRef.current?.close()
-    }
-  }, [connect])
+  // ── Market focus ────────────────────────────────────────────────────────────
 
   const setMarketFocus = useCallback((focus: string) => {
     setMarketFocusState(focus)
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "set_focus", value: focus }))
-    }
+    fetch(`${API_BASE}/api/focus`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value: focus }),
+    }).catch(console.warn)
   }, [])
 
   return { headlines, wsStatus, llmStatus, marketFocus, setMarketFocus, newBatch }
