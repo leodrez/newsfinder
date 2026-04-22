@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Loader2 } from "lucide-react"
 import { useWebSocket, type HeadlineItem } from "@/hooks/use-websocket"
 import { Header, type SortOrder } from "@/components/header"
+import { FocusBar } from "@/components/focus-bar"
 import { FilterBar } from "@/components/filter-bar"
 import { HeadlineList } from "@/components/headline-list"
 import { HeadlineTimeline } from "@/components/headline-timeline"
@@ -93,8 +94,6 @@ export default function App() {
       <Header
         wsStatus={wsStatus}
         llmStatus={llmStatus}
-        marketFocus={marketFocus}
-        onFocusChange={setMarketFocus}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         sortOrder={sortOrder}
@@ -102,6 +101,7 @@ export default function App() {
         pollingEnabled={pollingEnabled}
         onPollingToggle={setPollingEnabled}
       />
+      <FocusBar marketFocus={marketFocus} onFocusChange={setMarketFocus} />
       <FilterBar filter={filter} onFilterChange={setFilter} totalCount={filtered.length} />
 
       {isEmpty ? (

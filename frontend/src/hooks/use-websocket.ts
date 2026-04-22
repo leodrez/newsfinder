@@ -144,14 +144,5 @@ export function useWebSocket(): UseWebSocketReturn {
     }).catch(console.warn)
   }, [])
 
-  // ── Auto-pause: 30 minutes after polling is enabled ────────────────────────
-  // Resets automatically whenever polling is manually turned back on.
-
-  useEffect(() => {
-    if (!pollingEnabled) return
-    const timer = setTimeout(() => setPollingEnabled(false), 30 * 60 * 1000)
-    return () => clearTimeout(timer)
-  }, [pollingEnabled, setPollingEnabled])
-
   return { headlines, wsStatus, llmStatus, marketFocus, setMarketFocus, newBatch, pollingEnabled, setPollingEnabled }
 }

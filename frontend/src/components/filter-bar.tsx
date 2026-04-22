@@ -39,10 +39,12 @@ export function FilterBar({ filter, onFilterChange, totalCount }: FilterBarProps
           All
         </ToggleGroupItem>
         <ToggleGroupItem value="high" className="text-xs h-7 px-2.5">
-          High Impact
+          <span className="hidden sm:inline">High Impact</span>
+          <span className="sm:hidden">High</span>
         </ToggleGroupItem>
         <ToggleGroupItem value="medium" className="text-xs h-7 px-2.5">
-          Medium
+          <span className="hidden sm:inline">Medium</span>
+          <span className="sm:hidden">Med</span>
         </ToggleGroupItem>
         <ToggleGroupItem value="low" className="text-xs h-7 px-2.5">
           Low

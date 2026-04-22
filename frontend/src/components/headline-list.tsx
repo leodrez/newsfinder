@@ -91,7 +91,7 @@ export function HeadlineList({ headlines, sortOrder }: HeadlineListProps) {
   }, [headlines, newestFirst])
 
   return (
-    <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-2">
+    <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden px-2 sm:px-4 py-2">
       {batches.map((batch) => (
         <div key={batch.ts}>
           <div className="flex items-center gap-3 my-2">
@@ -125,7 +125,7 @@ export function HeadlineList({ headlines, sortOrder }: HeadlineListProps) {
                 </div>
 
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium leading-snug text-foreground">
+                  <p className="text-sm font-medium leading-snug text-foreground break-words">
                     {item.title}
                   </p>
                   {item.summary && (

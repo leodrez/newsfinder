@@ -5,7 +5,13 @@ import { fetchAllFeeds } from "../lib/rss"
 import { scrapeAll } from "../lib/scraper"
 import { filterNew } from "../lib/dedup"
 import { scoreHeadlines } from "../lib/llm"
-import { feeds, LLM_MODEL, DEFAULT_MARKET_FOCUS, CONFIG_KEYS } from "../lib/config"
+import {
+  feeds,
+  LLM_MODEL,
+  DEFAULT_MARKET_FOCUS,
+  CONFIG_KEYS,
+  POLLING_AUTO_PAUSE_SEC,
+} from "../lib/config"
 import type { ScoredHeadline } from "../lib/types"
 
 export const config = { maxDuration: 60 }
@@ -13,13 +19,31 @@ export const config = { maxDuration: 60 }
 async function runPoll(): Promise<{ stored: number; skipped?: boolean }> {
   const supabase = getSupabase()
 
-  // Check if polling is enabled before doing any work
-  const { data: flagRow } = await supabase
+  const { data: pollCfgRows } = await supabase
     .from("config")
-    .select("value")
-    .eq("key", CONFIG_KEYS.pollingEnabled)
-    .single()
-  if (flagRow?.value === "false") {
+    .select("key, value")
+    .in("key", [CONFIG_KEYS.pollingEnabled, CONFIG_KEYS.pollingResumedAt])
+
+  const pollCfg = Object.fromEntries(
+    (pollCfgRows ?? []).map((r: { key: string; value: string }) => [r.key, r.value])
+  )
+
+  if (pollCfg[CONFIG_KEYS.pollingEnabled] === "false") {
+    return { stored: 0, skipped: true }
+  }
+
+  const now = Math.floor(Date.now() / 1000)
+  const rawResumed = pollCfg[CONFIG_KEYS.pollingResumedAt]
+  const resumedAt = rawResumed ? parseInt(rawResumed, 10) : NaN
+  const needsResumeInit = !rawResumed || Number.isNaN(resumedAt) || resumedAt <= 0
+
+  if (needsResumeInit) {
+    await supabase
+      .from("config")
+      .upsert({ key: CONFIG_KEYS.pollingResumedAt, value: String(now) })
+  } else if (now - resumedAt >= POLLING_AUTO_PAUSE_SEC) {
+    await supabase.from("config").upsert({ key: CONFIG_KEYS.pollingEnabled, value: "false" })
+    console.log(`[poll] Auto-paused after ${POLLING_AUTO_PAUSE_SEC}s since resume`)
     return { stored: 0, skipped: true }
   }
 

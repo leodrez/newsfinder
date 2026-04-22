@@ -55,6 +55,9 @@ export const feeds: FeedConfig[] = [
 export const LLM_MODEL = process.env.LLM_MODEL ?? "claude-haiku-4-5-20251001"
 export const LLM_MAX_BATCH = 5
 
+/** Server-side auto-pause: seconds from `polling_resumed_at` until polling turns off. */
+export const POLLING_AUTO_PAUSE_SEC = 30 * 60
+
 export const DEFAULT_MARKET_FOCUS =
   "S&P 500 (SPY, ES) and Nasdaq 100 (QQQ, NQ) index futures and ETFs. " +
   "Interested in: Fed rate decisions, CPI/PPI/jobs data, big tech earnings " +
@@ -67,4 +70,6 @@ export const CONFIG_KEYS = {
   llmModel: "llm_model",
   lastPollTs: "last_poll_ts",
   pollingEnabled: "polling_enabled",
+  /** Unix seconds when polling was last set to enabled (start of auto-pause window). */
+  pollingResumedAt: "polling_resumed_at",
 } as const
