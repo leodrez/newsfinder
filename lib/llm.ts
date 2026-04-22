@@ -76,13 +76,12 @@ export async function scoreHeadlines(
   }
 
   const client = new Anthropic({ apiKey })
-  const scored: ScoredHeadline[] = []
 
+  const batches: Headline[][] = []
   for (let i = 0; i < headlines.length; i += LLM_MAX_BATCH) {
-    const batch = headlines.slice(i, i + LLM_MAX_BATCH)
-    const results = await scoreBatch(client, batch, marketFocus)
-    scored.push(...results)
+    batches.push(headlines.slice(i, i + LLM_MAX_BATCH))
   }
 
-  return scored
+  const results = await Promise.all(batches.map((batch) => scoreBatch(client, batch, marketFocus)))
+  return results.flat()
 }
