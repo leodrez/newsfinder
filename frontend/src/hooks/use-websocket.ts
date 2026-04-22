@@ -196,7 +196,7 @@ export function useWebSocket(): UseWebSocketReturn {
       schedule()
     }
 
-    const events = ["mousemove", "keydown", "click", "scroll", "touchstart"] as const
+    const events = ["mousemove", "keydown", "scroll", "touchstart"] as const
     events.forEach((e) => window.addEventListener(e, handleActivity, { passive: true }))
     schedule() // start the clock immediately
 
