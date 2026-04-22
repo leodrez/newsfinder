@@ -144,33 +144,6 @@ export function useWebSocket(): UseWebSocketReturn {
     }).catch(console.warn)
   }, [])
 
-  // ── Auto-pause: tab hidden / closed ────────────────────────────────────────
-  // keepalive:true makes the fetch survive tab close / navigation.
-
-  useEffect(() => {
-    function postPolling(enabled: boolean, keepalive = false) {
-      fetch(`${API_BASE}/api/polling`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled }),
-        keepalive,
-      }).catch(() => {})
-    }
-
-    function handleVisibility() {
-      if (document.visibilityState === "hidden") {
-        setPollingEnabledState(false)
-        postPolling(false, true) // keepalive so it fires even on tab close
-      } else {
-        setPollingEnabledState(true)
-        postPolling(true)
-      }
-    }
-
-    document.addEventListener("visibilitychange", handleVisibility)
-    return () => document.removeEventListener("visibilitychange", handleVisibility)
-  }, [])
-
   // ── Auto-pause: inactivity (30 minutes) ────────────────────────────────────
   // Any mouse/keyboard/touch activity resets the timer and resumes polling.
 
@@ -189,8 +162,7 @@ export function useWebSocket(): UseWebSocketReturn {
     }
 
     function handleActivity() {
-      // Resume only if tab is visible (don't fight the visibility handler)
-      if (!pollingEnabledRef.current && document.visibilityState === "visible") {
+      if (!pollingEnabledRef.current) {
         setPollingEnabled(true)
       }
       schedule()
