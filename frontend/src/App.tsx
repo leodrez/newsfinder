@@ -35,15 +35,16 @@ function playDoubleAlert() {
   setTimeout(playAlert, 200)
 }
 
-function filterHeadlines(items: HeadlineItem[], filter: FilterValue): HeadlineItem[] {
-  if (filter === "all") return items
-  return items.filter((item) => item.impact === filter)
+function filterHeadlines(items: HeadlineItem[], filters: FilterValue[]): HeadlineItem[] {
+  if (filters.includes("all") || filters.length === 0) return items
+  const active = new Set(filters)
+  return items.filter((item) => active.has(item.impact as FilterValue))
 }
 
 export default function App() {
   const { headlines, wsStatus, llmStatus, marketFocus, setMarketFocus, newBatch } =
     useWebSocket()
-  const [filter, setFilter] = useState<FilterValue>("all")
+  const [filter, setFilter] = useState<FilterValue[]>(["all"])
   const [viewMode, setViewMode] = useState<ViewMode>("list")
   const [sortOrder, setSortOrder] = useState<SortOrder>("newest-first")
   const notifiedRef = useRef(false)
