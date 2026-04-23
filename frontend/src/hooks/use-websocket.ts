@@ -51,15 +51,16 @@ export function useWebSocket(): UseWebSocketReturn {
     async function bootstrap() {
       try {
         // Load last 200 headlines directly from Supabase (anon key, RLS allows SELECT)
+        // Newest first in SQL, then reverse so state matches realtime: oldest → newest, slice(-200) keeps latest.
         const { data: rows, error } = await supabase
           .from("headlines")
           .select("title, url, source, published_ts, fetched_ts, relevance, impact, summary")
-          .order("fetched_ts", { ascending: true })
+          .order("fetched_ts", { ascending: false })
           .limit(200)
 
         if (error) throw error
         if (rows?.length) {
-          setHeadlines(rows as HeadlineItem[])
+          setHeadlines([...(rows as HeadlineItem[])].reverse())
         }
         isFirstLoad.current = false
 
