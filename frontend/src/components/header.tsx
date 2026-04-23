@@ -1,4 +1,4 @@
-import { Moon, Sun, List, Clock, Wifi, WifiOff, Brain, ArrowDownUp, Pause, Play } from "lucide-react"
+import { Moon, Sun, List, Clock, Wifi, WifiOff, Brain, ArrowDownUp, Pause, Play, LogOut } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -7,6 +7,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useTheme } from "@/components/theme-provider"
+import { useAuth } from "@/hooks/use-auth"
 import type { LlmStatus } from "@/hooks/use-websocket"
 
 export type SortOrder = "newest-first" | "oldest-first"
@@ -33,6 +34,7 @@ export function Header({
   onPollingToggle,
 }: HeaderProps) {
   const { setTheme } = useTheme()
+  const { signOut } = useAuth()
 
   return (
     <header className="border-b bg-card">
@@ -135,6 +137,17 @@ export function Header({
           />
 
           <div className="w-px h-4 bg-border mx-0.5" />
+
+          {/* Sign out */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={signOut}
+            title="Sign out"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+          </Button>
 
           {/* Theme toggle */}
           <DropdownMenu>

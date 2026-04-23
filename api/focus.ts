@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node"
 import { getSupabase } from "../lib/supabase"
+import { getAuthUser } from "../lib/auth"
 import { DEFAULT_MARKET_FOCUS, CONFIG_KEYS } from "../lib/config"
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -17,6 +18,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   if (req.method === "POST") {
+    const user = await getAuthUser(req)
+    if (!user) return res.status(401).json({ error: "Unauthorized" })
+
     const { value } = req.body as { value?: string }
     if (typeof value !== "string") return res.status(400).json({ error: "Missing value" })
     const { error } = await supabase

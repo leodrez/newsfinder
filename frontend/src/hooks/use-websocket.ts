@@ -2,6 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import type { RealtimeChannel } from "@supabase/supabase-js"
 
+async function authHeaders(): Promise<HeadersInit> {
+  const { data } = await supabase.auth.getSession()
+  const token = data.session?.access_token
+  return token
+    ? { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
+    : { "Content-Type": "application/json" }
+}
+
 export interface HeadlineItem {
   title: string
   url: string
@@ -127,22 +135,26 @@ export function useWebSocket(): UseWebSocketReturn {
 
   const setMarketFocus = useCallback((focus: string) => {
     setMarketFocusState(focus)
-    fetch(`${API_BASE}/api/focus`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ value: focus }),
-    }).catch(console.warn)
+    authHeaders().then((headers) =>
+      fetch(`${API_BASE}/api/focus`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ value: focus }),
+      }).catch(console.warn)
+    )
   }, [])
 
   // ── Polling toggle ──────────────────────────────────────────────────────────
 
   const setPollingEnabled = useCallback((enabled: boolean) => {
     setPollingEnabledState(enabled) // optimistic
-    fetch(`${API_BASE}/api/polling`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ enabled }),
-    }).catch(console.warn)
+    authHeaders().then((headers) =>
+      fetch(`${API_BASE}/api/polling`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ enabled }),
+      }).catch(console.warn)
+    )
   }, [])
 
   return { headlines, wsStatus, llmStatus, marketFocus, setMarketFocus, newBatch, pollingEnabled, setPollingEnabled }

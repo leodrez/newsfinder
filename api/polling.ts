@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node"
 import { getSupabase } from "../lib/supabase"
+import { getAuthUser } from "../lib/auth"
 import { CONFIG_KEYS } from "../lib/config"
 
 function nowUnixSec(): string {
@@ -23,6 +24,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   if (req.method === "POST") {
+    const user = await getAuthUser(req)
+    if (!user) return res.status(401).json({ error: "Unauthorized" })
+
     const { enabled } = req.body as { enabled?: boolean }
     if (typeof enabled !== "boolean") return res.status(400).json({ error: "Missing enabled boolean" })
     if (enabled) {
