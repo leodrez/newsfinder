@@ -147,15 +147,29 @@ export function useWebSocket(): UseWebSocketReturn {
   // ── Polling toggle ──────────────────────────────────────────────────────────
 
   const setPollingEnabled = useCallback((enabled: boolean) => {
+    const previous = pollingEnabled
     setPollingEnabledState(enabled) // optimistic
-    authHeaders().then((headers) =>
-      fetch(`${API_BASE}/api/polling`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ enabled }),
-      }).catch(console.warn)
-    )
-  }, [])
+    authHeaders()
+      .then((headers) =>
+        fetch(`${API_BASE}/api/polling`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ enabled }),
+        })
+      )
+      .then(async (res) => {
+        if (!res.ok) {
+          const message = await res.text()
+          throw new Error(`Polling update failed (${res.status}): ${message}`)
+        }
+        const data = await res.json()
+        setPollingEnabledState(data.enabled ?? enabled)
+      })
+      .catch((err) => {
+        console.warn("[polling] Failed to update polling state:", err)
+        setPollingEnabledState((current) => (current === enabled ? previous : current))
+      })
+  }, [pollingEnabled])
 
   return { headlines, wsStatus, llmStatus, marketFocus, setMarketFocus, newBatch, pollingEnabled, setPollingEnabled }
 }
