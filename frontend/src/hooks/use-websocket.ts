@@ -58,7 +58,7 @@ export function useWebSocket(): UseWebSocketReturn {
   useEffect(() => {
     async function bootstrap() {
       try {
-        // Load last 200 headlines directly from Supabase (anon key, RLS allows SELECT)
+        // Load last 200 headlines directly from Supabase as the signed-in user.
         // Newest first in SQL, then reverse so state matches realtime: oldest → newest, slice(-200) keeps latest.
         const { data: rows, error } = await supabase
           .from("headlines")
@@ -73,10 +73,11 @@ export function useWebSocket(): UseWebSocketReturn {
         isFirstLoad.current = false
 
         // Load LLM status, market focus, and polling state from API routes
+        const headers = await authHeaders()
         const [statusRes, focusRes, pollingRes] = await Promise.all([
-          fetch(`${API_BASE}/api/status`),
-          fetch(`${API_BASE}/api/focus`),
-          fetch(`${API_BASE}/api/polling`),
+          fetch(`${API_BASE}/api/status`, { headers }),
+          fetch(`${API_BASE}/api/focus`, { headers }),
+          fetch(`${API_BASE}/api/polling`, { headers }),
         ])
         if (statusRes.ok) {
           const data = await statusRes.json()
