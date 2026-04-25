@@ -145,7 +145,7 @@ export function HeadlineTimeline({ headlines, sortOrder }: HeadlineTimelineProps
               <div className="flex items-center gap-2">
                 <div className="h-px flex-1 bg-border" />
                 <span className="text-[10px] text-muted-foreground font-mono whitespace-nowrap">
-                  {formatBatchTime(entry.batchTs)} ·<br /> {entry.batchSize} headline
+                  {formatBatchTime(entry.batchTs)} · {entry.batchSize} headline
                   {entry.batchSize !== 1 ? "s" : ""}
                 </span>
                 <div className="h-px flex-1 bg-border" />

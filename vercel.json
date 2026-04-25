@@ -1,7 +1,7 @@
 {
   "buildCommand": "cd frontend && npm install && npm run build",
   "outputDirectory": "frontend/dist",
-  "devCommand": "cd frontend && npm run dev --port 3001",
+  "devCommand": "cd frontend && npm run dev",
   "installCommand": "npm install",
   "functions": {
     "api/poll.ts": {

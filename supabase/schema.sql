@@ -20,9 +20,9 @@ CREATE TABLE IF NOT EXISTS headlines (
 
 CREATE INDEX IF NOT EXISTS headlines_fetched_ts_idx ON headlines (fetched_ts DESC);
 
--- RLS: anon can SELECT (needed for Realtime + direct frontend queries)
+-- RLS: signed-in users can read headlines.
 ALTER TABLE headlines ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "anon_select" ON headlines FOR SELECT TO anon USING (true);
+CREATE POLICY "authenticated_select" ON headlines FOR SELECT TO authenticated USING (true);
 -- INSERT / UPDATE / DELETE are only allowed via the service-role key (bypasses RLS)
 
 -- Enable Realtime so inserts are broadcast to subscribed frontend clients
