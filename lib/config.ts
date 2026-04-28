@@ -56,7 +56,7 @@ export const LLM_MODEL = process.env.LLM_MODEL ?? "claude-haiku-4-5-20251001"
 export const LLM_MAX_BATCH = 5
 
 /** Server-side auto-pause: seconds from `polling_resumed_at` until polling turns off. */
-export const POLLING_AUTO_PAUSE_SEC = 30 * 60
+export const POLLING_AUTO_PAUSE_SEC = 60 * 60
 
 export const DEFAULT_MARKET_FOCUS =
   "S&P 500 (SPY, ES) and Nasdaq 100 (QQQ, NQ) index futures and ETFs. " +
