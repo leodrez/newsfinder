@@ -1,22 +1,3 @@
-# --- Python ---
-__pycache__/
-*.py[cod]
-*.pyd
-*.so
-.Python
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-.coverage.*
-htmlcov/
-
-# --- Virtual environments ---
-.venv/
-venv/
-env/
-ENV/
-
 # --- Environment and local config ---
 .env
 .env.*

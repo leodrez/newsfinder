@@ -7,22 +7,27 @@ Polls RSS feeds and financial news sites, scores each headline's relevance to yo
 ## Setup
 
 ```bash
-pip install -r requirements.txt
+npm install
+cd frontend && npm install
 cp .env.example .env
-# Edit .env and add your Anthropic API key
+# Edit .env and add your Anthropic, Supabase, and QStash settings
 ```
 
 ## Usage
 
 ```bash
-python main.py
+npx vercel dev
 ```
 
-Open **http://localhost:8000** in your browser. Type your current trading focus (e.g. "S&P 500 futures", "NVDA and semiconductor stocks") into the input at the top, and headlines will be scored and streamed in real time.
+Open the local Vercel dev URL in your browser. The app serves a Vite React dashboard with TypeScript Vercel API routes under `api/`.
+
+Type your current trading focus (e.g. "S&P 500 futures", "NVDA and semiconductor stocks") into the input at the top, and headlines will be scored and streamed in real time.
 
 ## Configuration
 
-Edit `config.yaml` to add/remove RSS feeds, change polling intervals, or adjust LLM settings.
+Edit `lib/config.ts` to add or remove feeds, adjust polling behavior, or change server-side defaults.
+
+Environment variables are documented in `.env.example`. Frontend variables must use the `VITE_` prefix so Vite can expose them to the browser.
 
 ## Data Sources
 
@@ -30,4 +35,4 @@ Edit `config.yaml` to add/remove RSS feeds, change polling intervals, or adjust 
 - Federal Reserve press releases (RSS)
 - Finviz news headlines (scraped)
 
-All sources are configurable in `config.yaml`.
+All sources are configurable in `lib/config.ts`.
