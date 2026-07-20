@@ -2,8 +2,17 @@ import { createHash } from "crypto"
 import { getSupabase } from "./supabase"
 import type { Headline } from "./types"
 
+function normalizeTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/^[a-z0-9 ._-]{2,24}:\s+/, "")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
 function hashTitle(title: string): string {
-  const normalized = title.toLowerCase().replace(/\s+/g, " ").trim()
+  const normalized = normalizeTitle(title)
   return createHash("md5").update(normalized).digest("hex")
 }
 
@@ -19,7 +28,8 @@ export async function filterNew(headlines: Headline[]): Promise<Headline[]> {
   if (!headlines.length) return []
 
   const supabase = getSupabase()
-  const entries = headlines.map((h) => ({ hash: hashTitle(h.title) }))
+  const headlineHashes = headlines.map((headline) => ({ headline, hash: hashTitle(headline.title) }))
+  const entries = Array.from(new Set(headlineHashes.map((h) => h.hash))).map((hash) => ({ hash }))
 
   // Insert all hashes. ignoreDuplicates means existing ones are silently skipped.
   // .select() returns only the rows that were actually inserted (i.e. new ones).
@@ -34,6 +44,7 @@ export async function filterNew(headlines: Headline[]): Promise<Headline[]> {
   }
 
   const newHashes = new Set((data ?? []).map((r: { hash: string }) => r.hash))
+  const returnedHashes = new Set<string>()
 
   // Purge stale entries (replaces the 24h Redis TTL)
   await supabase
@@ -41,5 +52,11 @@ export async function filterNew(headlines: Headline[]): Promise<Headline[]> {
     .delete()
     .lt("created_at", new Date(Date.now() - 86400_000).toISOString())
 
-  return headlines.filter((h) => newHashes.has(hashTitle(h.title)))
+  return headlineHashes
+    .filter(({ hash }) => {
+      if (!newHashes.has(hash) || returnedHashes.has(hash)) return false
+      returnedHashes.add(hash)
+      return true
+    })
+    .map(({ headline }) => headline)
 }

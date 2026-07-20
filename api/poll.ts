@@ -10,11 +10,24 @@ import {
   LLM_MODEL,
   DEFAULT_MARKET_FOCUS,
   CONFIG_KEYS,
+  MAX_HEADLINE_AGE_SEC,
   POLLING_AUTO_PAUSE_SEC,
 } from "../lib/config"
-import type { ScoredHeadline } from "../lib/types"
+import type { Headline, ScoredHeadline } from "../lib/types"
 
 export const config = { maxDuration: 60 }
+
+const MAX_FUTURE_SKEW_SEC = 5 * 60
+
+function isCurrentHeadline(headline: Headline, now: number): boolean {
+  const publishedTs = headline.published_ts
+  return (
+    Number.isFinite(publishedTs) &&
+    publishedTs > 0 &&
+    publishedTs <= now + MAX_FUTURE_SKEW_SEC &&
+    now - publishedTs <= MAX_HEADLINE_AGE_SEC
+  )
+}
 
 async function runPoll(): Promise<{ stored: number; skipped?: boolean }> {
   const supabase = getSupabase()
@@ -54,17 +67,19 @@ async function runPoll(): Promise<{ stored: number; skipped?: boolean }> {
     scrapeAll(feeds),
   ])
   const all = [...rssHeadlines, ...scrapedHeadlines]
+  const currentHeadlines = all.filter((h) => isCurrentHeadline(h, now))
 
   // Dedup — filterNew handles Supabase upsert + stale hash cleanup
-  const newHeadlines = await filterNew(all)
+  const newHeadlines = await filterNew(currentHeadlines)
+  console.log(
+    `[poll] ${all.length} fetched, ${currentHeadlines.length} current, ${newHeadlines.length} new`
+  )
   if (!newHeadlines.length) {
     await supabase
       .from("config")
       .upsert({ key: CONFIG_KEYS.lastPollTs, value: String(Math.floor(Date.now() / 1000)) })
     return { stored: 0 }
   }
-
-  console.log(`[poll] ${all.length} fetched, ${newHeadlines.length} new`)
 
   // Get current market focus from config table
   const { data: focusRow } = await supabase

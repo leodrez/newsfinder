@@ -55,6 +55,9 @@ export const feeds: FeedConfig[] = [
 export const LLM_MODEL = process.env.LLM_MODEL ?? "claude-haiku-4-5-20251001"
 export const LLM_MAX_BATCH = 5
 
+/** Only process headlines published within this rolling real-time window. */
+export const MAX_HEADLINE_AGE_SEC = 6 * 60 * 60
+
 /** Server-side auto-pause: seconds from `polling_resumed_at` until polling turns off. */
 export const POLLING_AUTO_PAUSE_SEC = 60 * 60
 
