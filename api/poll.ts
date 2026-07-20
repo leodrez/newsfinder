@@ -9,13 +9,14 @@ import {
   feeds,
   LLM_MODEL,
   DEFAULT_MARKET_FOCUS,
+  DEFAULT_MIN_RELEVANCE,
   CONFIG_KEYS,
   MAX_HEADLINE_AGE_SEC,
   POLLING_AUTO_PAUSE_SEC,
 } from "../lib/config"
 import type { Headline, ScoredHeadline } from "../lib/types"
 
-export const config = { maxDuration: 60 }
+// Function duration is configured in vercel.json (single source of truth).
 
 const MAX_FUTURE_SKEW_SEC = 5 * 60
 
@@ -80,19 +81,32 @@ async function runPoll(): Promise<{ stored: number; skipped?: boolean }> {
     return { stored: 0 }
   }
 
-  // Get current market focus from config table
-  const { data: focusRow } = await supabase
+  // Get market focus + min relevance from the config table
+  const { data: settingRows } = await supabase
     .from("config")
-    .select("value")
-    .eq("key", CONFIG_KEYS.marketFocus)
-    .single()
-  const marketFocus = focusRow?.value ?? DEFAULT_MARKET_FOCUS
+    .select("key, value")
+    .in("key", [CONFIG_KEYS.marketFocus, CONFIG_KEYS.minRelevance])
+  const settings = Object.fromEntries(
+    (settingRows ?? []).map((r: { key: string; value: string }) => [r.key, r.value])
+  )
+  const marketFocus = settings[CONFIG_KEYS.marketFocus] ?? DEFAULT_MARKET_FOCUS
+  const rawMinRel = parseInt(settings[CONFIG_KEYS.minRelevance] ?? "", 10)
+  const minRelevance = Number.isFinite(rawMinRel) ? rawMinRel : DEFAULT_MIN_RELEVANCE
 
-  // Score with LLM
+  // Score with LLM, then keep only headlines at or above the relevance floor
   const scored: ScoredHeadline[] = await scoreHeadlines(newHeadlines, marketFocus)
+  const relevant = scored.filter((h) => h.relevance >= minRelevance)
+  console.log(`[poll] ${scored.length} scored, ${relevant.length} >= relevance ${minRelevance}`)
+
+  if (!relevant.length) {
+    await supabase
+      .from("config")
+      .upsert({ key: CONFIG_KEYS.lastPollTs, value: String(Math.floor(Date.now() / 1000)) })
+    return { stored: 0 }
+  }
 
   // Insert into headlines table — Supabase Realtime will broadcast each insert
-  const rows = scored.map((h) => ({
+  const rows = relevant.map((h) => ({
     title: h.title,
     url: h.url,
     source: h.source,
@@ -112,7 +126,7 @@ async function runPoll(): Promise<{ stored: number; skipped?: boolean }> {
     { key: CONFIG_KEYS.llmModel, value: LLM_MODEL },
   ])
 
-  return { stored: scored.length }
+  return { stored: relevant.length }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

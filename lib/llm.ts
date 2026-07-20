@@ -4,15 +4,45 @@ import type { Headline, ScoredHeadline } from "./types"
 
 const SYSTEM_PROMPT =
   "You are a day-trading news assistant. The trader tells you their current " +
-  "market focus. For each headline, assess relevance and potential market impact.\n\n" +
-  "Respond with a JSON array (one object per headline) in this exact format:\n" +
-  '[{"relevance": <0-10>, "impact": "<high|medium|low|none>", "summary": "<brief context or empty string>"}]\n\n' +
+  "market focus. For each headline, assess relevance and potential market impact, " +
+  "then call the `record_scores` tool exactly once with one entry per headline, " +
+  "in the same order as the headlines were given.\n\n" +
   "Rules:\n" +
   "- relevance 8-10: directly moves the trader's market right now\n" +
   "- relevance 4-7: related sector/macro news, indirect impact\n" +
   "- relevance 0-3: unrelated or stale\n" +
-  "- summary: only add if the headline is ambiguous and needs context (keep under 15 words), otherwise empty string\n" +
-  "- Return ONLY the JSON array, no markdown fences or explanation"
+  "- summary: only add if the headline is ambiguous and needs context (keep under 15 words), otherwise empty string"
+
+const SCORING_TOOL = {
+  name: "record_scores",
+  description: "Record the relevance, impact, and summary for each headline, in order.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      scores: {
+        type: "array",
+        description: "One entry per headline, in the same order the headlines were provided.",
+        items: {
+          type: "object",
+          properties: {
+            relevance: { type: "integer", description: "0-10 relevance to the trader's focus" },
+            impact: { type: "string", enum: ["high", "medium", "low", "none"] },
+            summary: { type: "string", description: "Brief context if ambiguous, else empty string" },
+          },
+          required: ["relevance", "impact", "summary"],
+        },
+      },
+    },
+    required: ["scores"],
+  },
+}
+
+type RawScore = { relevance?: number; impact?: string; summary?: string }
+
+function clampRelevance(value: number | undefined): number {
+  if (!Number.isFinite(value)) return 5
+  return Math.max(0, Math.min(10, Math.round(value as number)))
+}
 
 function fallback(headlines: Headline[]): ScoredHeadline[] {
   return headlines.map((h) => ({ ...h, relevance: 5, impact: "medium" as const, summary: "" }))
@@ -31,25 +61,18 @@ async function scoreBatch(
       model: LLM_MODEL,
       max_tokens: 1024,
       system: SYSTEM_PROMPT,
+      tools: [SCORING_TOOL],
+      tool_choice: { type: "tool", name: "record_scores" },
       messages: [{ role: "user", content: userMsg }],
     })
 
-    let text = (resp.content[0] as { type: "text"; text: string }).text.trim()
-    // Strip markdown fences if the model adds them despite instructions
-    if (text.startsWith("```")) {
-      text = text.split("\n").slice(1).join("\n")
-      if (text.endsWith("```")) text = text.slice(0, text.lastIndexOf("```"))
-    }
-
-    const scores = JSON.parse(text) as Array<{
-      relevance: number
-      impact: string
-      summary: string
-    }>
+    // Tool inputs are guaranteed valid JSON by the API — no text parsing needed.
+    const toolUse = resp.content.find((b) => b.type === "tool_use")
+    const scores = (toolUse?.input as { scores?: RawScore[] } | undefined)?.scores ?? []
 
     return batch.map((h, i) => ({
       ...h,
-      relevance: Math.round(scores[i]?.relevance ?? 5),
+      relevance: clampRelevance(scores[i]?.relevance),
       impact: (scores[i]?.impact ?? "medium") as ScoredHeadline["impact"],
       summary: scores[i]?.summary ?? "",
     }))

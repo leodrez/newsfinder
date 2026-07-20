@@ -40,6 +40,9 @@ export const feeds: FeedConfig[] = [
 export const LLM_MODEL = process.env.LLM_MODEL ?? "claude-haiku-4-5-20251001"
 export const LLM_MAX_BATCH = 5
 
+/** Only store headlines the LLM scores at or above this relevance (0-10). */
+export const DEFAULT_MIN_RELEVANCE = 4
+
 /** Only process headlines published within this rolling real-time window. */
 export const MAX_HEADLINE_AGE_SEC = 6 * 60 * 60
 
@@ -84,4 +87,6 @@ export const CONFIG_KEYS = {
   pollingResumedAt: "polling_resumed_at",
   /** Unix seconds when cleanup (retention + dedup purge) last ran. */
   lastCleanupTs: "last_cleanup_ts",
+  /** Minimum LLM relevance (0-10) required to store a headline. */
+  minRelevance: "min_relevance",
 } as const

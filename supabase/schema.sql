@@ -55,12 +55,14 @@ INSERT INTO config (key, value) VALUES
   ('last_poll_ts',    '0'),
   ('polling_enabled', 'true'),
   ('polling_resumed_at', '0'),
-  ('last_cleanup_ts', '0')
+  ('last_cleanup_ts', '0'),
+  ('min_relevance', '4')
 ON CONFLICT (key) DO NOTHING;
 
 -- Existing database (add the new keys if missing):
 -- INSERT INTO config (key, value) VALUES ('polling_resumed_at', '0') ON CONFLICT (key) DO NOTHING;
 -- INSERT INTO config (key, value) VALUES ('last_cleanup_ts', '0') ON CONFLICT (key) DO NOTHING;
+-- INSERT INTO config (key, value) VALUES ('min_relevance', '4') ON CONFLICT (key) DO NOTHING;
 
 -- RLS: no public access
 ALTER TABLE config ENABLE ROW LEVEL SECURITY;
