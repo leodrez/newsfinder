@@ -1,7 +1,7 @@
 export interface FeedConfig {
   name: string
   url: string
-  type: "rss" | "scrape"
+  type: "rss"
 }
 
 export const feeds: FeedConfig[] = [
@@ -31,11 +31,6 @@ export const feeds: FeedConfig[] = [
     type: "rss",
   },
   {
-    name: "AP News Business",
-    url: "https://rsshub.app/apnews/topics/business",
-    type: "rss",
-  },
-  {
     name: "Yahoo Finance",
     url: "https://finance.yahoo.com/news/rssindex",
     type: "rss",
@@ -45,11 +40,6 @@ export const feeds: FeedConfig[] = [
     url: "https://www.federalreserve.gov/feeds/press_all.xml",
     type: "rss",
   },
-  {
-    name: "Finviz News",
-    url: "https://finviz.com/news.ashx",
-    type: "scrape",
-  },
 ]
 
 export const LLM_MODEL = process.env.LLM_MODEL ?? "claude-haiku-4-5-20251001"
@@ -57,6 +47,28 @@ export const LLM_MAX_BATCH = 5
 
 /** Only process headlines published within this rolling real-time window. */
 export const MAX_HEADLINE_AGE_SEC = 6 * 60 * 60
+
+/** How long a title hash is remembered for dedup (replaces the old Redis TTL). */
+export const DEDUP_TTL_SEC = 24 * 60 * 60
+
+/** Headlines older than this (by fetched_ts) are purged during cleanup. */
+export const HEADLINE_RETENTION_SEC = 7 * 24 * 60 * 60
+
+/** Cleanup (retention + dedup purge) runs at most once per this interval. */
+export const CLEANUP_INTERVAL_SEC = 60 * 60
+
+/**
+ * Invariant: the freshness window MUST stay strictly below the dedup TTL.
+ * If an item can still be "fresh" after its dedup hash expires, it will be
+ * re-scored and re-inserted on every poll — the daily-repeat bug. Enforce it
+ * at module load so a future edit to either constant fails loudly.
+ */
+if (MAX_HEADLINE_AGE_SEC >= DEDUP_TTL_SEC) {
+  throw new Error(
+    `Config invariant violated: MAX_HEADLINE_AGE_SEC (${MAX_HEADLINE_AGE_SEC}) ` +
+      `must be < DEDUP_TTL_SEC (${DEDUP_TTL_SEC}) to prevent re-insertion of stale headlines.`
+  )
+}
 
 /** Server-side auto-pause: seconds from `polling_resumed_at` until polling turns off. */
 export const POLLING_AUTO_PAUSE_SEC = 60 * 60
@@ -75,4 +87,6 @@ export const CONFIG_KEYS = {
   pollingEnabled: "polling_enabled",
   /** Unix seconds when polling was last set to enabled (start of auto-pause window). */
   pollingResumedAt: "polling_resumed_at",
+  /** Unix seconds when cleanup (retention + dedup purge) last ran. */
+  lastCleanupTs: "last_cleanup_ts",
 } as const

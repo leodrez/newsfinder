@@ -17,12 +17,13 @@ function hashTitle(title: string): string {
 }
 
 /**
- * Returns only headlines whose title hash has not been seen in the last 24h.
+ * Returns only headlines whose title hash has not been seen within the dedup
+ * TTL window.
  *
  * Uses Supabase upsert with ignoreDuplicates — only newly inserted rows are
  * returned, which tells us exactly which headlines are new.
  *
- * Also purges hashes older than 24h each run (replaces Redis TTL).
+ * Stale hashes are purged separately by `runCleanupIfDue` (see lib/cleanup.ts).
  */
 export async function filterNew(headlines: Headline[]): Promise<Headline[]> {
   if (!headlines.length) return []
@@ -45,12 +46,6 @@ export async function filterNew(headlines: Headline[]): Promise<Headline[]> {
 
   const newHashes = new Set((data ?? []).map((r: { hash: string }) => r.hash))
   const returnedHashes = new Set<string>()
-
-  // Purge stale entries (replaces the 24h Redis TTL)
-  await supabase
-    .from("headline_dedup")
-    .delete()
-    .lt("created_at", new Date(Date.now() - 86400_000).toISOString())
 
   return headlineHashes
     .filter(({ hash }) => {

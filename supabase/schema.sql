@@ -54,23 +54,32 @@ INSERT INTO config (key, value) VALUES
   ('llm_model',       'claude-haiku-4-5-20251001'),
   ('last_poll_ts',    '0'),
   ('polling_enabled', 'true'),
-  ('polling_resumed_at', '0')
+  ('polling_resumed_at', '0'),
+  ('last_cleanup_ts', '0')
 ON CONFLICT (key) DO NOTHING;
 
--- Existing database (add the new key if missing):
+-- Existing database (add the new keys if missing):
 -- INSERT INTO config (key, value) VALUES ('polling_resumed_at', '0') ON CONFLICT (key) DO NOTHING;
+-- INSERT INTO config (key, value) VALUES ('last_cleanup_ts', '0') ON CONFLICT (key) DO NOTHING;
 
 -- RLS: no public access
 ALTER TABLE config ENABLE ROW LEVEL SECURITY;
 -- (no policies = accessible to service_role only)
 
 
--- ── 4. Scheduled cleanup (optional — requires pg_cron extension) ─────────────
--- Uncomment if you have pg_cron enabled (Supabase Pro plan).
--- This purges dedup hashes older than 24h once a day at midnight UTC.
+-- ── 4. Scheduled cleanup ─────────────────────────────────────────────────────
+-- Cleanup (dedup-hash purge + headline retention) runs in-app, throttled to
+-- once per hour via the `last_cleanup_ts` config key (see lib/cleanup.ts).
+-- No pg_cron / paid plan required.
+--
+-- OPTIONAL: if you have pg_cron (Supabase Pro), you can move it to the DB
+-- instead and drop the in-app call:
 --
 -- SELECT cron.schedule(
---   'purge-headline-dedup',
---   '0 0 * * *',
---   $$DELETE FROM headline_dedup WHERE created_at < NOW() - INTERVAL '24 hours'$$
+--   'newsfinder-cleanup',
+--   '0 * * * *',
+--   $$
+--     DELETE FROM headline_dedup WHERE created_at < NOW() - INTERVAL '24 hours';
+--     DELETE FROM headlines      WHERE fetched_ts < EXTRACT(EPOCH FROM NOW() - INTERVAL '7 days');
+--   $$
 -- );

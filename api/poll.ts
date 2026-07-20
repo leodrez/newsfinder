@@ -2,8 +2,8 @@ import type { VercelRequest, VercelResponse } from "@vercel/node"
 import { Receiver } from "@upstash/qstash"
 import { getSupabase } from "../lib/supabase"
 import { fetchAllFeeds } from "../lib/rss"
-import { scrapeAll } from "../lib/scraper"
 import { filterNew } from "../lib/dedup"
+import { runCleanupIfDue } from "../lib/cleanup"
 import { scoreHeadlines } from "../lib/llm"
 import {
   feeds,
@@ -31,6 +31,10 @@ function isCurrentHeadline(headline: Headline, now: number): boolean {
 
 async function runPoll(): Promise<{ stored: number; skipped?: boolean }> {
   const supabase = getSupabase()
+
+  // Housekeeping (throttled): runs whenever the endpoint is hit, even while
+  // polling is paused, so retention/dedup purge keep working.
+  await runCleanupIfDue(supabase)
 
   const { data: pollCfgRows } = await supabase
     .from("config")
@@ -60,13 +64,8 @@ async function runPoll(): Promise<{ stored: number; skipped?: boolean }> {
     return { stored: 0, skipped: true }
   }
 
-  // Fetch all feeds in parallel
-  const rssFeeds = feeds.filter((f) => f.type === "rss")
-  const [rssHeadlines, scrapedHeadlines] = await Promise.all([
-    fetchAllFeeds(rssFeeds),
-    scrapeAll(feeds),
-  ])
-  const all = [...rssHeadlines, ...scrapedHeadlines]
+  // Fetch all feeds in parallel (all feeds are RSS)
+  const all = await fetchAllFeeds(feeds)
   const currentHeadlines = all.filter((h) => isCurrentHeadline(h, now))
 
   // Dedup — filterNew handles Supabase upsert + stale hash cleanup
