@@ -6,11 +6,6 @@ export interface FeedConfig {
 
 export const feeds: FeedConfig[] = [
   {
-    name: "Reuters Business",
-    url: "https://www.reutersagency.com/feed/?best-topics=business-finance&post_type=best",
-    type: "rss",
-  },
-  {
     name: "CNBC Top News",
     url: "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114",
     type: "rss",
@@ -26,8 +21,8 @@ export const feeds: FeedConfig[] = [
     type: "rss",
   },
   {
-    name: "MarketWatch Market Pulse",
-    url: "https://feeds.marketwatch.com/marketwatch/marketpulse/",
+    name: "NYT Business",
+    url: "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",
     type: "rss",
   },
   {
