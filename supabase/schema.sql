@@ -85,3 +85,24 @@ ALTER TABLE config ENABLE ROW LEVEL SECURITY;
 --     DELETE FROM headlines      WHERE fetched_ts < EXTRACT(EPOCH FROM NOW() - INTERVAL '7 days');
 --   $$
 -- );
+
+
+-- ── 5. Market briefs ─────────────────────────────────────────────────────────
+-- One row per generated Open Brief. Generation is user-initiated from the tab,
+-- so this table is deliberately NOT added to the Realtime publication.
+CREATE TABLE IF NOT EXISTS market_briefs (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  generated_ts    BIGINT      NOT NULL,
+  window_start_ts BIGINT      NOT NULL,
+  window_end_ts   BIGINT      NOT NULL,
+  summary         TEXT        NOT NULL,
+  sentiment       INTEGER     NOT NULL,
+  payload         JSONB       NOT NULL,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS market_briefs_generated_ts_idx ON market_briefs (generated_ts DESC);
+
+ALTER TABLE market_briefs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "authenticated_select" ON market_briefs FOR SELECT TO authenticated USING (true);
+-- INSERT / UPDATE / DELETE only via the service-role key

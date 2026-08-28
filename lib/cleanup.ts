@@ -4,6 +4,7 @@ import {
   CLEANUP_INTERVAL_SEC,
   DEDUP_TTL_SEC,
   HEADLINE_RETENTION_SEC,
+  BRIEF_RETENTION_SEC,
 } from "./config"
 
 /**
@@ -47,6 +48,13 @@ export async function runCleanupIfDue(supabase: SupabaseClient): Promise<void> {
     .delete()
     .lt("created_at", dedupCutoff)
   if (dedupErr) console.warn("[cleanup] dedup purge error:", dedupErr.message)
+
+  const briefCutoff = now - BRIEF_RETENTION_SEC
+  const { error: briefErr } = await supabase
+    .from("market_briefs")
+    .delete()
+    .lt("generated_ts", briefCutoff)
+  if (briefErr) console.warn("[cleanup] briefs purge error:", briefErr.message)
 
   console.log(`[cleanup] ran: retention<${retentionCutoff}, dedup<${dedupCutoff}`)
 }

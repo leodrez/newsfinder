@@ -52,6 +52,9 @@ export const DEDUP_TTL_SEC = 24 * 60 * 60
 /** Headlines older than this (by fetched_ts) are purged during cleanup. */
 export const HEADLINE_RETENTION_SEC = 7 * 24 * 60 * 60
 
+/** Generated briefs older than this are purged during cleanup. */
+export const BRIEF_RETENTION_SEC = 30 * 24 * 60 * 60
+
 /** Cleanup (retention + dedup purge) runs at most once per this interval. */
 export const CLEANUP_INTERVAL_SEC = 60 * 60
 
