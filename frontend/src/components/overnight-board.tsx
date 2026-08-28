@@ -49,6 +49,12 @@ export function OvernightBoard({ quotes, errors }: OvernightBoardProps) {
         )
       })}
 
+      {quotes.length === 0 && failures.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          No instruments were returned for this brief.
+        </p>
+      )}
+
       {failures.length > 0 && (
         <div className="rounded border border-destructive/40 bg-destructive/5 p-2.5 text-xs">
           <div className="font-medium text-destructive">

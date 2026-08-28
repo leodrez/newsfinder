@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react"
 import { RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -7,30 +8,66 @@ import { SentimentMeter } from "@/components/sentiment-meter"
 import { OvernightBoard } from "@/components/overnight-board"
 import { GammaPanel } from "@/components/gamma-panel"
 
+// Threshold past which a brief's age is called out in a warning colour.
+const STALE_AGE_SEC = 4 * 60 * 60
+
 function formatEt(ts: number): string {
-  return new Date(ts * 1000).toLocaleTimeString("en-US", {
+  return new Date(ts * 1000).toLocaleString("en-US", {
     timeZone: "America/New_York",
+    month: "short",
+    day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
   })
 }
 
+function formatAge(ageSec: number): string {
+  if (ageSec < 60) return "just now"
+  const minutes = Math.floor(ageSec / 60)
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
+}
+
 export function BriefPage() {
   const { brief, status, error, refetch } = useBrief()
+  // Ticking clock so the relative age stays truthful without an impure Date.now()
+  // call during render. Minute resolution is plenty for an hours-scale staleness cue.
+  const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000))
+  useEffect(() => {
+    const id = setInterval(() => setNowSec(Math.floor(Date.now() / 1000)), 60_000)
+    return () => clearInterval(id)
+  }, [])
   const loading = status === "loading"
   const windowHours = brief
     ? Math.round((brief.window_end_ts - brief.window_start_ts) / 3600)
     : 0
+  const ageSec = brief ? Math.max(0, nowSec - brief.generated_ts) : 0
+  const isStale = brief ? ageSec > STALE_AGE_SEC : false
 
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto max-w-4xl space-y-4 px-4 py-4">
         <div className="flex items-center justify-between gap-3">
           <div className="text-xs text-muted-foreground">
-            {brief
-              ? `Generated ${formatEt(brief.generated_ts)} ET · ${windowHours}h window · ${brief.payload.headlineCount} headlines`
-              : "No brief generated yet"}
+            {brief ? (
+              <>
+                <span>Generated {formatEt(brief.generated_ts)} ET</span>
+                <span className={isStale ? "text-destructive font-medium" : "text-muted-foreground"}>
+                  {" · "}
+                  {formatAge(ageSec)}
+                </span>
+                <span>
+                  {" · "}
+                  {windowHours}h window · {brief.payload.headlineCount} headlines
+                </span>
+              </>
+            ) : (
+              "No brief generated yet"
+            )}
           </div>
           <Button size="sm" className="h-7 gap-1.5 text-xs" onClick={refetch} disabled={loading}>
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />

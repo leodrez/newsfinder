@@ -21,7 +21,9 @@ export function GammaPanel({ gamma, error }: GammaPanelProps) {
     )
   }
 
-  const isLong = gamma.netGex >= 0
+  // Trust the server's classification rather than recomputing it from netGex,
+  // so the label can never diverge from what the backend actually decided.
+  const isLong = gamma.regime === "mean-reversion"
   const verdict = isLong ? "Mean reversion / range" : "Trending / momentum"
   const rationale = isLong
     ? "Dealers are long gamma — hedging sells rallies and buys dips, suppressing volatility."

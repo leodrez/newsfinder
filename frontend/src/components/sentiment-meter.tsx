@@ -24,12 +24,12 @@ export function SentimentMeter({ sentiment, label, error }: SentimentMeterProps)
       <div className="flex items-baseline justify-between">
         <span className={`text-2xl font-semibold tabular-nums ${tone}`}>
           {sentiment > 0 ? "+" : ""}
-          {sentiment}
+          {Math.round(sentiment)}
         </span>
         <span className="text-xs text-muted-foreground">{label}</span>
       </div>
 
-      <div className="relative h-2 rounded-full bg-gradient-to-r from-destructive via-muted to-emerald-500">
+      <div className="relative h-2 overflow-hidden rounded-full bg-gradient-to-r from-destructive via-muted to-emerald-500">
         <div
           className="absolute top-1/2 h-3.5 w-1 -translate-y-1/2 rounded-full bg-foreground ring-2 ring-background"
           style={{ left: `calc(${position}% - 2px)` }}
