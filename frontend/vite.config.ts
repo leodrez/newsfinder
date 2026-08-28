@@ -8,6 +8,8 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      // Shared with the serverless functions in ../lib so unit conventions have one home.
+      "@shared": path.resolve(__dirname, "../lib"),
     },
   },
 })

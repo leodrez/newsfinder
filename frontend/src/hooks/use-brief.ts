@@ -34,6 +34,12 @@ export interface OvernightQuote {
   anchor: number
   change: number
   changePct: number
+  /**
+   * Set by lib/market-data.ts when the prior RTH close was unavailable and
+   * chartPreviousClose was substituted. That can flip the sign of the move, so
+   * the board footnotes the row rather than showing it as a clean reading.
+   */
+  anchorFallback?: boolean
 }
 
 export interface MarketBrief {

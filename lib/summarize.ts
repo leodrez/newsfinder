@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk"
 import { LLM_MODEL } from "./config"
+import { formatQuoteChange } from "./quote-format"
 import type { Headline, OvernightQuote, GammaSnapshot, BriefSummary } from "./types"
 
 const MAX_HEADLINES = 120
@@ -60,13 +61,9 @@ function clampSentiment(value: number | undefined): number {
 }
 
 function renderTape(quotes: OvernightQuote[], gamma: GammaSnapshot | null): string {
-  const lines = quotes.map((q) => {
-    if (q.symbol === "^TNX") {
-      const bp = (q.last - q.anchor) * 100
-      return `${q.label}: ${q.last} (${bp >= 0 ? "+" : ""}${bp.toFixed(1)}bp)`
-    }
-    return `${q.label}: ${q.last} (${q.changePct >= 0 ? "+" : ""}${q.changePct.toFixed(2)}%)`
-  })
+  // Units live in lib/quote-format.ts, shared with the UI board so the two
+  // renderers cannot drift on whether a yield is a percent or basis points.
+  const lines = quotes.map((q) => `${q.label}: ${q.last} (${formatQuoteChange(q)})`)
   if (gamma) {
     lines.push(
       `Dealer gamma: net ${(gamma.netGex / 1e9).toFixed(1)}bn per 1% (${gamma.regime}), ` +
@@ -112,12 +109,16 @@ export async function summarizeOvernight(
 
   const toolUse = resp.content.find((b) => b.type === "tool_use")
   const raw = toolUse?.input as RawBrief | undefined
-  if (!raw?.summary) {
+  // Trim first: a whitespace-only summary is as empty as a missing one, and
+  // persisting it would render a blank paragraph with no errors.summary beside
+  // a live sentiment number — a silent blank where a visible error is required.
+  const summary = raw?.summary?.trim()
+  if (!raw || !summary) {
     throw new Error("LLM summarization returned no summary")
   }
 
   return {
-    summary: raw.summary,
+    summary,
     sentiment: clampSentiment(raw.sentiment),
     sentimentLabel: raw.sentiment_label ?? "Neutral",
     keyDrivers: (raw.key_drivers ?? [])

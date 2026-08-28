@@ -17,8 +17,9 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@shared/*": ["../lib/*"]
     }
   },
-  "include": ["src"]
+  "include": ["src", "../lib/quote-format.ts", "../lib/types.ts"]
 }

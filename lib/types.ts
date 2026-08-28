@@ -39,6 +39,12 @@ export interface OvernightQuote {
   anchor: number
   change: number
   changePct: number
+  /**
+   * True when the prior RTH close was unavailable and `chartPreviousClose` was
+   * substituted. That substitution can flip the sign of the headline move, so
+   * the UI must footnote the row rather than present it as a clean reading.
+   */
+  anchorFallback?: boolean
 }
 
 export interface BriefDriver {

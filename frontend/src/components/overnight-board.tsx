@@ -1,3 +1,4 @@
+import { formatQuoteChange } from "@shared/quote-format"
 import type { OvernightQuote } from "@/hooks/use-brief"
 
 const GROUP_LABELS: Record<OvernightQuote["group"], string> = {
@@ -17,6 +18,7 @@ interface OvernightBoardProps {
 
 export function OvernightBoard({ quotes, errors }: OvernightBoardProps) {
   const failures = Object.entries(errors ?? {})
+  const fallbacks = quotes.filter((q) => q.anchorFallback)
 
   return (
     <div className="space-y-4">
@@ -33,12 +35,26 @@ export function OvernightBoard({ quotes, errors }: OvernightBoardProps) {
                 const up = q.change >= 0
                 return (
                   <div key={q.symbol} className="flex items-baseline justify-between gap-2 text-sm">
-                    <span className="truncate text-muted-foreground">{q.label}</span>
+                    <span className="truncate text-muted-foreground">
+                      {q.label}
+                      {q.anchorFallback && (
+                        <span
+                          className="ml-0.5 text-muted-foreground"
+                          title="Prior RTH close unavailable — previous close used as the anchor"
+                        >
+                          *
+                        </span>
+                      )}
+                    </span>
                     <span className="tabular-nums">
                       <span className="mr-2">{q.last.toLocaleString()}</span>
+                      {/*
+                        Units come from ../../../lib/quote-format.ts, shared with the LLM
+                        prompt tape in lib/summarize.ts: yields print in basis points,
+                        everything else as a percent.
+                      */}
                       <span className={up ? "text-emerald-500" : "text-destructive"}>
-                        {up ? "+" : ""}
-                        {q.changePct.toFixed(2)}%
+                        {formatQuoteChange(q)}
                       </span>
                     </span>
                   </div>
@@ -48,6 +64,15 @@ export function OvernightBoard({ quotes, errors }: OvernightBoardProps) {
           </div>
         )
       })}
+
+      {fallbacks.length > 0 && (
+        <p className="text-[11px] text-muted-foreground">
+          <span className="mr-1">*</span>
+          Prior RTH close unavailable for {fallbacks.map((q) => q.label).join(", ")}; the previous
+          close was used as the anchor instead, so the move shown may differ in size and even in
+          direction from the true overnight change.
+        </p>
+      )}
 
       {quotes.length === 0 && failures.length === 0 && (
         <p className="text-sm text-muted-foreground">

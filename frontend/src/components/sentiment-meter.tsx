@@ -14,8 +14,10 @@ export function SentimentMeter({ sentiment, label, error }: SentimentMeterProps)
     )
   }
 
-  // Map -100..100 onto 0..100% of the track width.
-  const position = ((sentiment + 100) / 200) * 100
+  // Map -100..100 onto 0..100% of the track width, then clamp to 1..99 so the
+  // marker is never clipped by the track's overflow-hidden at the extremes,
+  // where the reading matters most. The numeric value above is unclamped.
+  const position = Math.min(99, Math.max(1, ((sentiment + 100) / 200) * 100))
   const tone =
     sentiment > 15 ? "text-emerald-500" : sentiment < -15 ? "text-destructive" : "text-muted-foreground"
 

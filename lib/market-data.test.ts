@@ -88,3 +88,41 @@ test("rth-close spec falls back to chartPreviousClose when no completed 15:00 ET
   const q = quoteFromChart(spec, result, FRI_0925_ET)
   assert.equal(q.anchor, 7669.75)
 })
+
+test("the RTH-anchor fallback is flagged on the quote so the UI can footnote it", () => {
+  const spec = BOARD.find((s) => s.symbol === "ES=F")!
+  // Only 14:00 and 16:00 ET bars — no 15:00 ET bar at all.
+  const timestamps = [THU_1500_ET - HOUR, THU_1500_ET + HOUR]
+  const result: YahooChartResult = {
+    meta: { symbol: "ES=F", regularMarketPrice: 7679, chartPreviousClose: 7628.5 },
+    timestamp: timestamps,
+    indicators: { quote: [{ close: [7690, 7710] }] },
+  }
+  const q = quoteFromChart(spec, result, FRI_0925_ET)
+  assert.equal(q.anchorFallback, true)
+  assert.equal(q.anchor, 7628.5)
+  // The substitution flips the sign: -0.27% against the true RTH close of 7700.
+  assert.ok(q.changePct > 0, `got ${q.changePct}`)
+  assert.ok((7679 - 7700) / 7700 < 0, "the RTH anchor would have been negative")
+})
+
+test("a quote anchored to a real 15:00 ET bar carries no fallback flag", () => {
+  const spec = BOARD.find((s) => s.symbol === "ES=F")!
+  const { timestamps, closes } = bars()
+  const result: YahooChartResult = {
+    meta: { symbol: "ES=F", regularMarketPrice: 7777, chartPreviousClose: 7669.75 },
+    timestamp: timestamps,
+    indicators: { quote: [{ close: closes }] },
+  }
+  assert.equal(quoteFromChart(spec, result, FRI_0925_ET).anchorFallback, undefined)
+})
+
+test("prev-close instruments are not flagged as fallbacks — that is their normal anchor", () => {
+  const spec = BOARD.find((s) => s.symbol === "^TNX")!
+  const result: YahooChartResult = {
+    meta: { symbol: "^TNX", regularMarketPrice: 4.706, chartPreviousClose: 4.658 },
+    timestamp: [],
+    indicators: { quote: [{ close: [] }] },
+  }
+  assert.equal(quoteFromChart(spec, result, FRI_0925_ET).anchorFallback, undefined)
+})

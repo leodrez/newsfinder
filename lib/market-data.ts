@@ -92,9 +92,13 @@ export function quoteFromChart(
   const closes = result.indicators.quote[0]?.close ?? []
 
   let anchor: number | null = null
+  let anchorFallback = false
   if (spec.anchor === "rth-close") {
     anchor = rthCloseAnchor(result.timestamp ?? [], closes, now)
     if (anchor == null) {
+      // The substitution can flip the sign of the headline move, so flag it for
+      // the UI as well: a trader never sees this console line.
+      anchorFallback = true
       console.warn(
         `[market-data] ${spec.symbol}: no completed 15:00 ET bar found, RTH anchor unavailable, falling back to chartPreviousClose`
       )
@@ -107,7 +111,7 @@ export function quoteFromChart(
   }
 
   const change = last - anchor
-  return {
+  const quote: OvernightQuote = {
     symbol: spec.symbol,
     label: spec.label,
     group: spec.group,
@@ -116,6 +120,8 @@ export function quoteFromChart(
     change,
     changePct: (change / anchor) * 100,
   }
+  if (anchorFallback) quote.anchorFallback = true
+  return quote
 }
 
 async function fetchOne(spec: SymbolSpec, now: number): Promise<OvernightQuote> {
