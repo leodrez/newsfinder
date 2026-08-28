@@ -15,6 +15,9 @@
     },
     "api/status.ts": {
       "maxDuration": 10
+    },
+    "api/brief.ts": {
+      "maxDuration": 60
     }
   },
   "headers": [
