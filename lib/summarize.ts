@@ -60,9 +60,13 @@ function clampSentiment(value: number | undefined): number {
 }
 
 function renderTape(quotes: OvernightQuote[], gamma: GammaSnapshot | null): string {
-  const lines = quotes.map(
-    (q) => `${q.label}: ${q.last} (${q.changePct >= 0 ? "+" : ""}${q.changePct.toFixed(2)}%)`
-  )
+  const lines = quotes.map((q) => {
+    if (q.symbol === "^TNX") {
+      const bp = (q.last - q.anchor) * 100
+      return `${q.label}: ${q.last} (${bp >= 0 ? "+" : ""}${bp.toFixed(1)}bp)`
+    }
+    return `${q.label}: ${q.last} (${q.changePct >= 0 ? "+" : ""}${q.changePct.toFixed(2)}%)`
+  })
   if (gamma) {
     lines.push(
       `Dealer gamma: net ${(gamma.netGex / 1e9).toFixed(1)}bn per 1% (${gamma.regime}), ` +
