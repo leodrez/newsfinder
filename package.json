@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "build:frontend": "cd frontend && npm install && npm run build",
-    "test": "node --test lib/*.test.ts"
+    "test": "node --test lib/*.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",

@@ -13,5 +13,5 @@
     "forceConsistentCasingInFileNames": true
   },
   "include": ["api/**/*", "lib/**/*"],
-  "exclude": ["node_modules", "frontend"]
+  "exclude": ["node_modules", "frontend", "lib/**/*.test.ts"]
 }
