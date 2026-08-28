@@ -94,7 +94,10 @@ export function GammaPanel({ gamma, error }: GammaPanelProps) {
               {s.strike.toLocaleString()}
               {i === 0 && (
                 <span className="ml-1 font-sans text-[9px] uppercase tracking-wide text-muted-foreground">
-                  largest · magnet
+                  {/* Strikes are ranked by ABSOLUTE exposure, so the largest can be
+                      negative — short gamma there accelerates moves rather than pinning
+                      them, and calling it a magnet would invert the meaning. */}
+                  {s.gex >= 0 ? "largest · magnet" : "largest · accelerant"}
                 </span>
               )}
             </span>

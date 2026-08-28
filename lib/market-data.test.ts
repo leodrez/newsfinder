@@ -103,7 +103,15 @@ test("the RTH-anchor fallback is flagged on the quote so the UI can footnote it"
   assert.equal(q.anchor, 7628.5)
   // The substitution flips the sign: -0.27% against the true RTH close of 7700.
   assert.ok(q.changePct > 0, `got ${q.changePct}`)
-  assert.ok((7679 - 7700) / 7700 < 0, "the RTH anchor would have been negative")
+  // Same chart anchored to its real 15:00 ET bar would have been negative, so the
+  // fallback genuinely inverts the reported direction — hence the UI footnote.
+  const withRthBar = quoteFromChart(
+    spec,
+    { ...result, timestamp: [THU_1500_ET, ...timestamps], indicators: { quote: [{ close: [7700, 7690, 7710] }] } },
+    FRI_0925_ET
+  )
+  assert.equal(withRthBar.anchor, 7700)
+  assert.ok(withRthBar.changePct < 0, `got ${withRthBar.changePct}`)
 })
 
 test("a quote anchored to a real 15:00 ET bar carries no fallback flag", () => {
