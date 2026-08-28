@@ -8,6 +8,7 @@
       { "option": "SPX260918P00100000", "open_interest": 400, "gamma": 0.01 },
       { "option": "SPX260918P00090000", "open_interest": 500, "gamma": 0.02 },
       { "option": "SPX260918C00110000", "open_interest": 800, "gamma": 0.01 },
+      { "option": "SPX261012C00100000", "open_interest": 100, "gamma": 0.01 },
       { "option": "SPX261218C00110000", "open_interest": 9999, "gamma": 0.05 },
       { "option": "SPX260918C00105000", "open_interest": 900, "gamma": 0 },
       { "option": "SPX260918C00095000", "open_interest": 0, "gamma": 0.005 },

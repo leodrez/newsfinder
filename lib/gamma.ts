@@ -82,6 +82,20 @@ export function computeGamma(chain: CboeChain, now: Date): GammaSnapshot {
 }
 
 /**
+ * Validates that a snapshot contains usable market data.
+ * Returns an error message if the snapshot is not trustworthy, null if valid.
+ */
+export function isGammaSnapshotTrustworthy(snapshot: GammaSnapshot): string | null {
+  if (!snapshot.spot || !isFinite(snapshot.spot)) {
+    return "Cboe SPX chain returned no usable spot price"
+  }
+  if (snapshot.strikesCounted === 0) {
+    return "Cboe SPX chain yielded no priced strikes within 45 DTE"
+  }
+  return null
+}
+
+/**
  * Fetches the full SPX chain (~12.8MB), aggregates it, and discards the raw
  * payload. Throws with a specific, user-facing reason on every failure path.
  */
@@ -102,10 +116,22 @@ export async function fetchGamma(now: Date = new Date()): Promise<GammaSnapshot>
     throw new Error(`Cboe returned HTTP ${response.status} for the SPX option chain`)
   }
 
-  const chain = (await response.json()) as CboeChain
+  let chain: CboeChain
+  try {
+    chain = (await response.json()) as CboeChain
+  } catch (err) {
+    throw new Error(
+      `Cboe SPX chain response was malformed: ${(err as Error).message}`
+    )
+  }
+
   if (!chain?.data?.options?.length) {
     throw new Error("Cboe SPX chain response contained no option data")
   }
 
-  return computeGamma(chain, now)
+  const snapshot = computeGamma(chain, now)
+  const trustError = isGammaSnapshotTrustworthy(snapshot)
+  if (trustError) throw new Error(trustError)
+
+  return snapshot
 }

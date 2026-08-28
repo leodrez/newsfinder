@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert"
 import { readFileSync } from "node:fs"
-import { computeGamma } from "./gamma.ts"
+import { computeGamma, isGammaSnapshotTrustworthy } from "./gamma.ts"
 import type { CboeChain } from "./gamma.ts"
 
 const chain = JSON.parse(
@@ -11,7 +11,7 @@ const NOW = new Date("2026-08-28T00:00:00Z")
 
 test("nets calls positive and puts negative", () => {
   const g = computeGamma(chain, NOW)
-  assert.equal(g.netGex, 40000)
+  assert.equal(g.netGex, 50000)
   assert.equal(g.spot, 100)
 })
 
@@ -32,7 +32,7 @@ test("negative net GEX classifies as trending", () => {
 test("excludes contracts beyond 45 DTE, without gamma, or without open interest", () => {
   const g = computeGamma(chain, NOW)
   assert.equal(g.strikesCounted, 3, "105 and 95 must not create strikes")
-  assert.equal(g.contractsCounted, 2700, "the 112-DTE contract's 9999 OI must be excluded")
+  assert.equal(g.contractsCounted, 2800, "the 112-DTE contract's 9999 OI must be excluded")
 })
 
 test("finds the zero-gamma flip where cumulative GEX turns positive", () => {
@@ -56,4 +56,35 @@ test("ranks top strikes by absolute exposure", () => {
 
 test("ignores symbols that are not OSI-format", () => {
   assert.equal(computeGamma(chain, NOW).strikesCounted, 3)
+})
+
+test("validation rejects zero or non-finite spot price", () => {
+  const zeroSpot = computeGamma(
+    { data: { current_price: 0, options: [{ option: "SPX260918C00100000", open_interest: 100, gamma: 0.01 }] } },
+    NOW
+  )
+  const error = isGammaSnapshotTrustworthy(zeroSpot)
+  assert.equal(error, "Cboe SPX chain returned no usable spot price")
+})
+
+test("validation rejects snapshot with no priced strikes", () => {
+  const noStrikes = computeGamma(
+    { data: { current_price: 100, options: [{ option: "SPX260918C00100000", open_interest: 0, gamma: 0.01 }] } },
+    NOW
+  )
+  const error = isGammaSnapshotTrustworthy(noStrikes)
+  assert.equal(error, "Cboe SPX chain yielded no priced strikes within 45 DTE")
+})
+
+test("includes contracts at exactly 45 DTE", () => {
+  // SPX261012 expires 2026-10-12, which is exactly 45 DTE from 2026-08-28
+  const exactly45Dte: CboeChain = {
+    data: {
+      current_price: 100,
+      options: [{ option: "SPX261012C00100000", open_interest: 500, gamma: 0.01 }],
+    },
+  }
+  const g = computeGamma(exactly45Dte, NOW)
+  assert.equal(g.contractsCounted, 500, "45-DTE contract must be included")
+  assert.equal(g.strikesCounted, 1)
 })
