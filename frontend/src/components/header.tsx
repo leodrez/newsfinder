@@ -12,6 +12,8 @@ import type { LlmStatus } from "@/hooks/use-websocket"
 
 export type SortOrder = "newest-first" | "oldest-first"
 
+export type TabValue = "live" | "brief"
+
 interface HeaderProps {
   wsStatus: "connecting" | "connected" | "disconnected"
   llmStatus: LlmStatus
@@ -21,6 +23,8 @@ interface HeaderProps {
   onSortOrderChange: (order: SortOrder) => void
   pollingEnabled: boolean
   onPollingToggle: (enabled: boolean) => void
+  tab: TabValue
+  onTabChange: (tab: TabValue) => void
 }
 
 export function Header({
@@ -32,6 +36,8 @@ export function Header({
   onSortOrderChange,
   pollingEnabled,
   onPollingToggle,
+  tab,
+  onTabChange,
 }: HeaderProps) {
   const { setTheme } = useTheme()
   const { signOut } = useAuth()
@@ -43,41 +49,64 @@ export function Header({
           NewsFinder
         </h1>
 
-        <div className="flex items-center gap-1.5 ml-auto">
-          {/* View mode toggle */}
+        <div className="flex items-center gap-1 ml-3">
           <Button
-            variant={viewMode === "list" ? "secondary" : "ghost"}
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => onViewModeChange("list")}
-            title="List view"
+            variant={tab === "live" ? "secondary" : "ghost"}
+            size="sm"
+            className="h-7 px-2.5 text-xs"
+            onClick={() => onTabChange("live")}
           >
-            <List className="h-3.5 w-3.5" />
+            Live
           </Button>
           <Button
-            variant={viewMode === "timeline" ? "secondary" : "ghost"}
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => onViewModeChange("timeline")}
-            title="Timeline view"
+            variant={tab === "brief" ? "secondary" : "ghost"}
+            size="sm"
+            className="h-7 px-2.5 text-xs"
+            onClick={() => onTabChange("brief")}
           >
-            <Clock className="h-3.5 w-3.5" />
+            Open Brief
           </Button>
+        </div>
 
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() =>
-              onSortOrderChange(sortOrder === "newest-first" ? "oldest-first" : "newest-first")
-            }
-            title={sortOrder === "newest-first"
-              ? "Newest first (click to reverse)"
-              : "Oldest first (click to reverse)"
-            }
-          >
-            <ArrowDownUp className={`h-3.5 w-3.5 transition-transform ${sortOrder === "oldest-first" ? "rotate-180" : ""}`} />
-          </Button>
+        <div className="flex items-center gap-1.5 ml-auto">
+          {tab === "live" && (
+            <>
+              {/* View mode toggle */}
+              <Button
+                variant={viewMode === "list" ? "secondary" : "ghost"}
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => onViewModeChange("list")}
+                title="List view"
+              >
+                <List className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant={viewMode === "timeline" ? "secondary" : "ghost"}
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => onViewModeChange("timeline")}
+                title="Timeline view"
+              >
+                <Clock className="h-3.5 w-3.5" />
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() =>
+                  onSortOrderChange(sortOrder === "newest-first" ? "oldest-first" : "newest-first")
+                }
+                title={sortOrder === "newest-first"
+                  ? "Newest first (click to reverse)"
+                  : "Oldest first (click to reverse)"
+                }
+              >
+                <ArrowDownUp className={`h-3.5 w-3.5 transition-transform ${sortOrder === "oldest-first" ? "rotate-180" : ""}`} />
+              </Button>
+            </>
+          )}
 
           {/* Polling pause/resume */}
           <Button

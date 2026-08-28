@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Loader2 } from "lucide-react"
 import { useWebSocket, type HeadlineItem } from "@/hooks/use-websocket"
-import { Header, type SortOrder } from "@/components/header"
+import { Header, type SortOrder, type TabValue } from "@/components/header"
 import { FocusBar } from "@/components/focus-bar"
 import { FilterBar } from "@/components/filter-bar"
 import { HeadlineList } from "@/components/headline-list"
 import { HeadlineTimeline } from "@/components/headline-timeline"
+import { BriefPage } from "@/pages/brief-page"
 
 type FilterValue = "all" | "high" | "medium" | "low"
 type ViewMode = "list" | "timeline"
@@ -48,6 +49,7 @@ export default function App() {
   const [filter, setFilter] = useState<FilterValue[]>(["all"])
   const [viewMode, setViewMode] = useState<ViewMode>("list")
   const [sortOrder, setSortOrder] = useState<SortOrder>("newest-first")
+  const [tab, setTab] = useState<TabValue>("live")
   const notifiedRef = useRef(false)
 
   useEffect(() => {
@@ -100,23 +102,30 @@ export default function App() {
         onSortOrderChange={setSortOrder}
         pollingEnabled={pollingEnabled}
         onPollingToggle={setPollingEnabled}
+        tab={tab}
+        onTabChange={setTab}
       />
-      <FocusBar marketFocus={marketFocus} onFocusChange={setMarketFocus} />
-      <FilterBar filter={filter} onFilterChange={setFilter} totalCount={filtered.length} />
-
-      {isEmpty ? (
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground">
-          <Loader2 className="h-6 w-6 animate-spin" />
-          <span className="text-sm">
-            {wsStatus === "connecting" || wsStatus === "disconnected"
-              ? "Connecting to backend..."
-              : "Waiting for headlines..."}
-          </span>
-        </div>
-      ) : viewMode === "list" ? (
-        <HeadlineList headlines={filtered} sortOrder={sortOrder} />
+      {tab === "brief" ? (
+        <BriefPage />
       ) : (
-        <HeadlineTimeline headlines={filtered} sortOrder={sortOrder} />
+        <>
+          <FocusBar marketFocus={marketFocus} onFocusChange={setMarketFocus} />
+          <FilterBar filter={filter} onFilterChange={setFilter} totalCount={filtered.length} />
+          {isEmpty ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+              <Loader2 className="h-6 w-6 animate-spin" />
+              <span className="text-sm">
+                {wsStatus === "connecting" || wsStatus === "disconnected"
+                  ? "Connecting to backend..."
+                  : "Waiting for headlines..."}
+              </span>
+            </div>
+          ) : viewMode === "list" ? (
+            <HeadlineList headlines={filtered} sortOrder={sortOrder} />
+          ) : (
+            <HeadlineTimeline headlines={filtered} sortOrder={sortOrder} />
+          )}
+        </>
       )}
     </div>
   )
