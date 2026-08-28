@@ -1,10 +1,11 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
+    "module": "esnext",
+    "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "include": ["lib/**/*.test.ts", "lib/**/*.ts"]
+  "include": ["lib/**/*.test.ts", "lib/**/*.ts"],
+  "exclude": ["node_modules", "frontend"]
 }

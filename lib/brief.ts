@@ -1,6 +1,6 @@
 import { getSupabase } from "./supabase"
 import { fetchAllFeeds } from "./rss"
-import { feeds } from "./config"
+import { feeds, MAX_FUTURE_SKEW_SEC } from "./config"
 import { briefWindow } from "./window"
 import { fetchQuotes } from "./market-data"
 import { fetchGamma } from "./gamma"
@@ -38,11 +38,21 @@ export async function generateBrief(): Promise<MarketBrief> {
 
   const errors: BriefErrors = {}
 
+  // fetchAllFeeds (lib/rss.ts) catches every per-feed error internally and
+  // never rejects today; this branch is a defensive guard against a future
+  // change to that contract, not currently reachable.
   if (newsOutcome.status === "rejected") {
     throw new Error(`Could not fetch any news feeds: ${reasonOf(newsOutcome.reason)}`)
   }
-  const headlines: Headline[] = newsOutcome.value.filter(
-    (h) => h.published_ts >= start && h.published_ts <= end
+  const allItems = newsOutcome.value
+  if (!allItems.length) {
+    throw new Error("No feed returned any items — the feeds are unreachable or all failed")
+  }
+  // Allow a small future-skew tolerance on the upper bound: an undated item is
+  // stamped with fetchFeed's own `now` (lib/rss.ts), captured after network
+  // I/O and therefore strictly later than this window's `now`/`end`.
+  const headlines: Headline[] = allItems.filter(
+    (h) => h.published_ts >= start && h.published_ts <= end + MAX_FUTURE_SKEW_SEC
   )
   if (!headlines.length) {
     throw new Error(
@@ -55,6 +65,9 @@ export async function generateBrief(): Promise<MarketBrief> {
     quotes = quoteOutcome.value.quotes
     if (Object.keys(quoteOutcome.value.errors).length) errors.quotes = quoteOutcome.value.errors
   } else {
+    // fetchQuotes (lib/market-data.ts) uses Promise.allSettled internally and
+    // never rejects today; this branch is a defensive guard against a future
+    // change to that contract, not currently reachable.
     errors.quotes = { board: `Quote board failed: ${reasonOf(quoteOutcome.reason)}` }
   }
 

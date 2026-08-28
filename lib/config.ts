@@ -46,6 +46,14 @@ export const DEFAULT_MIN_RELEVANCE = 4
 /** Only process headlines published within this rolling real-time window. */
 export const MAX_HEADLINE_AGE_SEC = 6 * 60 * 60
 
+/**
+ * Tolerance for a headline's `published_ts` landing slightly after the window's
+ * `now`, e.g. an undated item stamped with the fetch-time `now` computed inside
+ * fetchFeed (lib/rss.ts), which runs after the window's own `now` was captured.
+ * Mirrors the constant of the same name in api/poll.ts.
+ */
+export const MAX_FUTURE_SKEW_SEC = 5 * 60
+
 /** How long a title hash is remembered for dedup (replaces the old Redis TTL). */
 export const DEDUP_TTL_SEC = 24 * 60 * 60
 
