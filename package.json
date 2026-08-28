@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build:frontend": "cd frontend && npm install && npm run build"
+    "build:frontend": "cd frontend && npm install && npm run build",
+    "test": "node --test lib/*.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",
