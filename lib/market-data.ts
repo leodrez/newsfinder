@@ -3,7 +3,22 @@ import type { OvernightQuote, QuoteGroup } from "./types"
 const CHART_BASE = "https://query1.finance.yahoo.com/v8/finance/chart"
 const FETCH_TIMEOUT_MS = 10000
 const HOUR_SEC = 3600
-/** Yahoo labels hourly bars by start time, so 15:00 ET closes at the 16:00 cash close. */
+/**
+ * Yahoo labels hourly bars by start time, so 15:00 ET closes at the 16:00 cash close.
+ *
+ * Unverified limitation: on a half-day (e.g. the Friday after Thanksgiving, Christmas
+ * Eve) the cash session closes at 13:00 ET, not 16:00. Two possibilities, and it is
+ * not known which Yahoo exhibits:
+ *   1. Yahoo still emits a bar starting at 15:00 ET (a mid-session print after the
+ *      cash close) and `rthCloseAnchor` would wrongly match it as if it were the
+ *      RTH close.
+ *   2. Yahoo has no 15:00 ET bar that day (trading stopped at 13:00), so
+ *      `rthCloseAnchor` returns null and `quoteFromChart` falls back to
+ *      `chartPreviousClose` — which is the correct prior settlement in that case.
+ * No holiday calendar is implemented here: the spec does not require one, a
+ * hardcoded US market calendar rots annually, and possibility 2 above may mean
+ * there is nothing to fix.
+ */
 const RTH_CLOSE_BAR_HOUR_ET = 15
 
 const ET_HOUR = new Intl.DateTimeFormat("en-US", {
@@ -79,6 +94,11 @@ export function quoteFromChart(
   let anchor: number | null = null
   if (spec.anchor === "rth-close") {
     anchor = rthCloseAnchor(result.timestamp ?? [], closes, now)
+    if (anchor == null) {
+      console.warn(
+        `[market-data] ${spec.symbol}: no completed 15:00 ET bar found, RTH anchor unavailable, falling back to chartPreviousClose`
+      )
+    }
   }
   if (anchor == null) anchor = result.meta.chartPreviousClose
 
@@ -113,16 +133,16 @@ async function fetchOne(spec: SymbolSpec, now: number): Promise<OvernightQuote> 
     const isTimeout = err instanceof Error && err.name === "TimeoutError"
     throw new Error(
       isTimeout
-        ? `${spec.label} timed out after ${FETCH_TIMEOUT_MS / 1000}s`
-        : `${spec.label} request failed: ${(err as Error).message}`
+        ? `${spec.symbol} timed out after ${FETCH_TIMEOUT_MS / 1000}s`
+        : `${spec.symbol} request failed: ${(err as Error).message}`
     )
   }
 
-  if (!response.ok) throw new Error(`${spec.label} returned HTTP ${response.status}`)
+  if (!response.ok) throw new Error(`${spec.symbol} returned HTTP ${response.status}`)
 
   const body = (await response.json()) as { chart?: { result?: YahooChartResult[] } }
   const result = body.chart?.result?.[0]
-  if (!result) throw new Error(`${spec.label} returned no chart data`)
+  if (!result) throw new Error(`${spec.symbol} returned no chart data`)
 
   return quoteFromChart(spec, result, now)
 }

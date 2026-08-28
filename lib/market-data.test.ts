@@ -74,3 +74,17 @@ test("the board covers all twelve instruments the spec requires", () => {
     assert.ok(BOARD.some((b) => b.symbol === s), `${s} missing from BOARD`)
   }
 })
+
+test("rth-close spec falls back to chartPreviousClose when no completed 15:00 ET bar exists", () => {
+  const spec = BOARD.find((s) => s.symbol === "ES=F")!
+  // Only 14:00 and 16:00 ET bars — no 15:00 ET bar at all.
+  const timestamps = [THU_1500_ET - HOUR, THU_1500_ET + HOUR]
+  const closes = [7690, 7710]
+  const result: YahooChartResult = {
+    meta: { symbol: "ES=F", regularMarketPrice: 7777, chartPreviousClose: 7669.75 },
+    timestamp: timestamps,
+    indicators: { quote: [{ close: closes }] },
+  }
+  const q = quoteFromChart(spec, result, FRI_0925_ET)
+  assert.equal(q.anchor, 7669.75)
+})
