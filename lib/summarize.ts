@@ -60,15 +60,25 @@ function clampSentiment(value: number | undefined): number {
   return Math.max(-100, Math.min(100, Math.round(value as number)))
 }
 
-function renderTape(quotes: OvernightQuote[], gamma: GammaSnapshot | null): string {
+function renderGamma(label: string, gamma: GammaSnapshot | null): string | null {
+  if (!gamma) return null
+  return (
+    `Dealer gamma ${label}: net ${(gamma.netGex / 1e9).toFixed(1)}bn per 1% (${gamma.regime}), ` +
+    `spot ${gamma.spot}, flip ${gamma.flipStrike ?? "n/a"}`
+  )
+}
+
+function renderTape(
+  quotes: OvernightQuote[],
+  gamma: GammaSnapshot | null,
+  gammaNq: GammaSnapshot | null
+): string {
   // Units live in lib/quote-format.ts, shared with the UI board so the two
   // renderers cannot drift on whether a yield is a percent or basis points.
   const lines = quotes.map((q) => `${q.label}: ${q.last} (${formatQuoteChange(q)})`)
-  if (gamma) {
-    lines.push(
-      `Dealer gamma: net ${(gamma.netGex / 1e9).toFixed(1)}bn per 1% (${gamma.regime}), ` +
-        `spot ${gamma.spot}, flip ${gamma.flipStrike ?? "n/a"}`
-    )
+  // Both indices, so the model can note when the two regimes disagree.
+  for (const line of [renderGamma("SPX", gamma), renderGamma("NDX+QQQ", gammaNq)]) {
+    if (line) lines.push(line)
   }
   return lines.join("\n")
 }
@@ -76,7 +86,8 @@ function renderTape(quotes: OvernightQuote[], gamma: GammaSnapshot | null): stri
 export async function summarizeOvernight(
   headlines: Headline[],
   quotes: OvernightQuote[],
-  gamma: GammaSnapshot | null
+  gamma: GammaSnapshot | null,
+  gammaNq: GammaSnapshot | null = null
 ): Promise<BriefSummary> {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey || apiKey === "sk-ant-your-key-here") {
@@ -89,7 +100,7 @@ export async function summarizeOvernight(
   // Newest first, so the cap drops the stalest items rather than the freshest.
   const ordered = [...headlines].sort((a, b) => b.published_ts - a.published_ts).slice(0, MAX_HEADLINES)
   const numbered = ordered.map((h, i) => `${i + 1}. [${h.source}] ${h.title}`).join("\n")
-  const userMsg = `Overnight tape:\n${renderTape(quotes, gamma)}\n\nOvernight headlines:\n${numbered}`
+  const userMsg = `Overnight tape:\n${renderTape(quotes, gamma, gammaNq)}\n\nOvernight headlines:\n${numbered}`
 
   const client = new Anthropic({ apiKey })
 

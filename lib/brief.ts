@@ -3,7 +3,7 @@ import { fetchAllFeeds } from "./rss"
 import { feeds, MAX_FUTURE_SKEW_SEC } from "./config"
 import { briefWindow } from "./window"
 import { fetchQuotes } from "./market-data"
-import { fetchGamma } from "./gamma"
+import { fetchGammaSet } from "./gamma"
 import { summarizeOvernight } from "./summarize"
 import type {
   BriefErrors,
@@ -33,7 +33,7 @@ export async function generateBrief(): Promise<MarketBrief> {
   const [newsOutcome, quoteOutcome, gammaOutcome] = await Promise.allSettled([
     fetchAllFeeds(feeds),
     fetchQuotes(now),
-    fetchGamma(),
+    fetchGammaSet(),
   ])
 
   const errors: BriefErrors = {}
@@ -72,10 +72,18 @@ export async function generateBrief(): Promise<MarketBrief> {
   }
 
   let gamma: GammaSnapshot | null = null
+  let gammaNq: GammaSnapshot | null = null
   if (gammaOutcome.status === "fulfilled") {
-    gamma = gammaOutcome.value
+    gamma = gammaOutcome.value.spx
+    gammaNq = gammaOutcome.value.nq
+    if (gammaOutcome.value.errors.spx) errors.gamma = gammaOutcome.value.errors.spx
+    if (gammaOutcome.value.errors.nq) errors.gammaNq = gammaOutcome.value.errors.nq
   } else {
-    errors.gamma = reasonOf(gammaOutcome.reason)
+    // fetchGammaSet catches per-index failures internally and never rejects
+    // today; this branch guards a future change to that contract.
+    const reason = reasonOf(gammaOutcome.reason)
+    errors.gamma = reason
+    errors.gammaNq = reason
   }
 
   let summary = ""
@@ -85,7 +93,7 @@ export async function generateBrief(): Promise<MarketBrief> {
   let sentimentLabel = ""
 
   try {
-    const result = await summarizeOvernight(headlines, quotes, gamma)
+    const result = await summarizeOvernight(headlines, quotes, gamma, gammaNq)
     summary = result.summary
     sentiment = result.sentiment
     sentimentLabel = result.sentimentLabel
@@ -98,6 +106,7 @@ export async function generateBrief(): Promise<MarketBrief> {
   const payload: BriefPayload = {
     quotes,
     gamma,
+    gammaNq,
     keyDrivers,
     riskEvents,
     sentimentLabel,
@@ -119,7 +128,8 @@ export async function generateBrief(): Promise<MarketBrief> {
 
   console.log(
     `[brief] ${headlines.length} headlines, ${quotes.length} quotes, ` +
-      `gamma ${gamma ? gamma.regime : "failed"}, errors ${Object.keys(errors).length}`
+      `gamma spx ${gamma ? gamma.regime : "failed"}, nq ${gammaNq ? gammaNq.regime : "failed"}, ` +
+      `errors ${Object.keys(errors).length}`
   )
 
   return brief

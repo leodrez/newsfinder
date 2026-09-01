@@ -1,8 +1,9 @@
 {
-  "timestamp": "2026-08-28 09:30:00",
+  "timestamp": "2026-08-28 14:30:00",
   "data": {
     "symbol": "^SPX",
     "current_price": 100,
+    "last_trade_time": "2026-08-28T10:15:00",
     "options": [
       { "option": "SPX260918C00100000", "open_interest": 1000, "gamma": 0.01 },
       { "option": "SPX260918P00100000", "open_interest": 400, "gamma": 0.01 },

@@ -1,7 +1,8 @@
 import type { GammaSnapshot } from "@/hooks/use-brief"
 
 interface GammaPanelProps {
-  gamma: GammaSnapshot | null
+  label: string
+  gamma: GammaSnapshot | null | undefined
   error?: string
 }
 
@@ -9,13 +10,38 @@ function formatBn(value: number): string {
   return `${value >= 0 ? "+" : "-"}$${Math.abs(value / 1e9).toFixed(2)}bn`
 }
 
-export function GammaPanel({ gamma, error }: GammaPanelProps) {
+/** Cboe reports both its build time and the underlying's last trade, so the
+ *  lag is a measurement rather than a repeated claim. */
+function formatDelay(seconds: number | null | undefined): string | null {
+  if (seconds == null || seconds < 0) return null
+  if (seconds < 90) return `${seconds}s`
+  return `${Math.round(seconds / 60)} min`
+}
+
+const ET_TIME = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  hourCycle: "h23",
+  hour: "2-digit",
+  minute: "2-digit",
+})
+
+function formatEt(ms: number | null | undefined): string | null {
+  return ms == null ? null : `${ET_TIME.format(new Date(ms))} ET`
+}
+
+function stripCaret(symbol: string): string {
+  return symbol.replace(/^\^/, "")
+}
+
+export function GammaPanel({ label, gamma, error }: GammaPanelProps) {
   if (!gamma) {
     return (
       <div className="rounded border border-destructive/40 bg-destructive/5 p-3">
-        <div className="text-xs font-medium text-destructive">Gamma regime unavailable</div>
+        <div className="text-xs font-medium text-destructive">
+          {label} gamma regime unavailable
+        </div>
         <div className="mt-1 text-xs text-muted-foreground">
-          {error ?? "The SPX option chain was not returned."}
+          {error ?? "The option chain was not returned."}
         </div>
       </div>
     )
@@ -35,9 +61,19 @@ export function GammaPanel({ gamma, error }: GammaPanelProps) {
   const flipSide =
     flipDistance == null ? null : flipDistance > 0 ? "above flip" : flipDistance < 0 ? "below flip" : "at flip"
 
+  // The first component is the base chain; the rest were scaled onto its axis.
+  const components = gamma.components ?? []
+  const axis = components.length > 1 ? stripCaret(components[0].symbol) : null
+  const overlays = components.slice(1)
+
+  const delay = formatDelay(gamma.quoteDelaySec)
+  const capturedAt = formatEt(gamma.quoteTs)
+  const tapeThrough = formatEt(gamma.lastTradeTs)
+
   return (
     <div className="space-y-3">
       <div>
+        <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
         <div className={`text-lg font-semibold ${isLong ? "text-emerald-500" : "text-amber-500"}`}>
           {isLong ? "Long gamma" : "Short gamma"} · {verdict}
         </div>
@@ -51,7 +87,9 @@ export function GammaPanel({ gamma, error }: GammaPanelProps) {
         </div>
         <div>
           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Spot</div>
-          <div className="tabular-nums">{gamma.spot.toLocaleString()}</div>
+          <div className="tabular-nums">
+            {gamma.spot.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+          </div>
         </div>
         <div>
           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Flip level</div>
@@ -81,7 +119,7 @@ export function GammaPanel({ gamma, error }: GammaPanelProps) {
 
       <div>
         <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-          Largest gamma strikes
+          Largest gamma strikes{axis ? ` (${axis} points)` : ""}
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           {/* Already ordered by absolute exposure, so the first is the magnet strike. */}
@@ -105,10 +143,33 @@ export function GammaPanel({ gamma, error }: GammaPanelProps) {
         </div>
       </div>
 
-      <p className="text-[10px] text-muted-foreground">
-        Cboe delayed quotes; open interest reflects the prior session close. 0–45 DTE,{" "}
-        {gamma.strikesCounted} strikes.
-      </p>
+      {/* Three different staleness clocks run here and they are not the same
+          number, so each is stated rather than collapsed into "delayed". */}
+      <div className="space-y-0.5 text-[10px] text-muted-foreground">
+        <div>
+          Quotes{" "}
+          {delay ? (
+            <span className="font-medium text-foreground/70">{delay} behind the tape</span>
+          ) : (
+            "on Cboe's delayed feed"
+          )}
+          {capturedAt && tapeThrough
+            ? ` — chain captured ${capturedAt}, reflecting trades through ${tapeThrough}`
+            : capturedAt
+              ? ` — chain captured ${capturedAt}`
+              : ""}
+          . Open interest is the prior session's close, so it lags a full session.
+        </div>
+        <div>
+          0–45 DTE · {gamma.strikesCounted} strikes ·{" "}
+          {gamma.contractsCounted.toLocaleString()} contracts
+          {overlays.length
+            ? ` · ${overlays
+                .map((c) => `${stripCaret(c.symbol)} folded in at ${c.strikeRatio.toFixed(2)}×`)
+                .join(", ")}`
+            : ""}
+        </div>
+      </div>
     </div>
   )
 }

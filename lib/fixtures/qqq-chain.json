@@ -1,0 +1,12 @@
+{
+  "timestamp": "2026-08-28 14:35:00",
+  "data": {
+    "symbol": "QQQ",
+    "current_price": 750,
+    "last_trade_time": "2026-08-28T10:05:00",
+    "options": [
+      { "option": "QQQ260918C00750000", "open_interest": 4000, "gamma": 0.04 },
+      { "option": "QQQ260918C00760000", "open_interest": 4000, "gamma": 0.04 }
+    ]
+  }
+}

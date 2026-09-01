@@ -164,8 +164,22 @@ export function BriefPage() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm">Dealer Gamma Regime</CardTitle>
               </CardHeader>
-              <CardContent>
-                <GammaPanel gamma={brief.payload.gamma} error={brief.payload.errors.gamma} />
+              <CardContent className="space-y-5">
+                <GammaPanel
+                  label="S&P 500 (SPX)"
+                  gamma={brief.payload.gamma}
+                  error={brief.payload.errors.gamma}
+                />
+                <div className="border-t pt-4">
+                  <GammaPanel
+                    label="Nasdaq 100 (NDX + QQQ) — NQ"
+                    gamma={brief.payload.gammaNq}
+                    error={
+                      brief.payload.errors.gammaNq ??
+                      "This brief predates the Nasdaq gamma panel."
+                    }
+                  />
+                </div>
               </CardContent>
             </Card>
           </>

@@ -16,6 +16,15 @@ export interface GammaStrike {
   gex: number
 }
 
+export interface GammaComponent {
+  /** Cboe's symbol for the chain, e.g. "^NDX" or "QQQ". */
+  symbol: string
+  /** Factor this chain's strikes were scaled by to reach the base axis. */
+  strikeRatio: number
+  netGex: number
+  contractsCounted: number
+}
+
 export interface GammaSnapshot {
   spot: number
   netGex: number
@@ -24,6 +33,14 @@ export interface GammaSnapshot {
   regime: "mean-reversion" | "trending"
   contractsCounted: number
   strikesCounted: number
+  /** Per-chain contributions; one entry for a single-chain index like SPX. */
+  components?: GammaComponent[]
+  /** When Cboe built the chain (epoch ms), or null if it carried no stamp. */
+  quoteTs?: number | null
+  /** Last trade in the underlying (epoch ms), or null if it carried no stamp. */
+  lastTradeTs?: number | null
+  /** Seconds the quotes lag the tape. Null when either stamp is missing. */
+  quoteDelaySec?: number | null
 }
 
 export interface OvernightQuote {
@@ -50,7 +67,10 @@ export interface MarketBrief {
   sentiment: number
   payload: {
     quotes: OvernightQuote[]
+    /** S&P 500 (SPX). */
     gamma: GammaSnapshot | null
+    /** Nasdaq 100 (NDX + QQQ). Absent from briefs generated before it existed. */
+    gammaNq?: GammaSnapshot | null
     keyDrivers: Array<{ headline: string; why: string }>
     riskEvents: string[]
     sentimentLabel: string
@@ -58,6 +78,7 @@ export interface MarketBrief {
     errors: {
       quotes?: Record<string, string>
       gamma?: string
+      gammaNq?: string
       summary?: string
     }
   }
