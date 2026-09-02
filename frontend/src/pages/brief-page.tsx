@@ -8,6 +8,7 @@ import { SentimentMeter } from "@/components/sentiment-meter"
 import { OvernightBoard } from "@/components/overnight-board"
 import { GammaPanel } from "@/components/gamma-panel"
 import { useSpeech } from "@/hooks/use-speech"
+import { SpeechControls } from "@/components/speech-controls"
 import { briefToSpeech } from "@shared/brief-speech"
 
 // Threshold past which a brief's age is called out in a warning colour.
@@ -110,7 +111,7 @@ export function BriefPage() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm">Overnight Summary</CardTitle>
                 {speech.supported && utterances.length > 0 && (
-                  <CardAction>
+                  <CardAction className="flex items-center gap-0.5">
                     <Button
                       size="sm"
                       variant="ghost"
@@ -127,6 +128,7 @@ export function BriefPage() {
                       )}
                       {speech.speaking ? "Stop" : "Listen"}
                     </Button>
+                    <SpeechControls speech={speech} />
                   </CardAction>
                 )}
               </CardHeader>
