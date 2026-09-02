@@ -1,12 +1,14 @@
-import { useEffect, useState } from "react"
-import { RefreshCw } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { RefreshCw, Square, Volume2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useBrief } from "@/hooks/use-brief"
 import { SentimentMeter } from "@/components/sentiment-meter"
 import { OvernightBoard } from "@/components/overnight-board"
 import { GammaPanel } from "@/components/gamma-panel"
+import { useSpeech } from "@/hooks/use-speech"
+import { briefToSpeech } from "@shared/brief-speech"
 
 // Threshold past which a brief's age is called out in a warning colour.
 const STALE_AGE_SEC = 4 * 60 * 60
@@ -42,6 +44,12 @@ export function BriefPage() {
     return () => clearInterval(id)
   }, [])
   const loading = status === "loading"
+
+  const speech = useSpeech()
+  const utterances = useMemo(() => (brief ? briefToSpeech(brief) : []), [brief])
+  // A new brief invalidates whatever is being read aloud.
+  useEffect(() => speech.stop(), [brief?.generated_ts, speech.stop])
+
   const windowHours = brief
     ? Math.round((brief.window_end_ts - brief.window_start_ts) / 3600)
     : 0
@@ -101,6 +109,26 @@ export function BriefPage() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm">Overnight Summary</CardTitle>
+                {speech.supported && utterances.length > 0 && (
+                  <CardAction>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="-my-1 h-7 gap-1.5 text-xs"
+                      onClick={() => (speech.speaking ? speech.stop() : speech.speak(utterances))}
+                      aria-label={
+                        speech.speaking ? "Stop reading the brief" : "Read the brief aloud"
+                      }
+                    >
+                      {speech.speaking ? (
+                        <Square className="h-3.5 w-3.5 fill-current" />
+                      ) : (
+                        <Volume2 className="h-3.5 w-3.5" />
+                      )}
+                      {speech.speaking ? "Stop" : "Listen"}
+                    </Button>
+                  </CardAction>
+                )}
               </CardHeader>
               <CardContent className="space-y-4">
                 {brief.payload.errors.summary ? (
