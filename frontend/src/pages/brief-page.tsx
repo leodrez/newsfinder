@@ -199,6 +199,9 @@ export function BriefPage() {
                   label="S&P 500 (SPX)"
                   gamma={brief.payload.gamma}
                   error={brief.payload.errors.gamma}
+                  sentiment={brief.sentiment}
+                  sentimentLabel={brief.payload.sentimentLabel}
+                  sentimentError={brief.payload.errors.summary}
                 />
                 <div className="border-t pt-4">
                   <GammaPanel
@@ -208,6 +211,9 @@ export function BriefPage() {
                       brief.payload.errors.gammaNq ??
                       "This brief predates the Nasdaq gamma panel."
                     }
+                    sentiment={brief.sentiment}
+                    sentimentLabel={brief.payload.sentimentLabel}
+                    sentimentError={brief.payload.errors.summary}
                   />
                 </div>
               </CardContent>

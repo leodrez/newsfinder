@@ -1,9 +1,17 @@
 import type { GammaSnapshot } from "@/hooks/use-brief"
+import { SentimentMeter } from "@/components/sentiment-meter"
 
 interface GammaPanelProps {
   label: string
   gamma: GammaSnapshot | null | undefined
   error?: string
+  /** Overall brief sentiment (-100..100). There is no separate per-index
+   *  reading — the LLM scores the tape once — so this repeats the same
+   *  number the Overnight Summary card shows, for readers who scroll
+   *  straight to a single asset's gamma segment. */
+  sentiment: number
+  sentimentLabel: string
+  sentimentError?: string
 }
 
 function formatBn(value: number): string {
@@ -33,7 +41,14 @@ function stripCaret(symbol: string): string {
   return symbol.replace(/^\^/, "")
 }
 
-export function GammaPanel({ label, gamma, error }: GammaPanelProps) {
+export function GammaPanel({
+  label,
+  gamma,
+  error,
+  sentiment,
+  sentimentLabel,
+  sentimentError,
+}: GammaPanelProps) {
   if (!gamma) {
     return (
       <div className="rounded border border-destructive/40 bg-destructive/5 p-3">
@@ -79,6 +94,8 @@ export function GammaPanel({ label, gamma, error }: GammaPanelProps) {
         </div>
         <p className="mt-1 text-xs text-muted-foreground">{rationale}</p>
       </div>
+
+      <SentimentMeter sentiment={sentiment} label={sentimentLabel} error={sentimentError} />
 
       <div className="grid grid-cols-3 gap-3 text-sm">
         <div>
