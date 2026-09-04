@@ -111,20 +111,35 @@ export default function App() {
         <>
           <FocusBar marketFocus={marketFocus} onFocusChange={setMarketFocus} />
           <FilterBar filter={filter} onFilterChange={setFilter} totalCount={filtered.length} />
-          {isEmpty ? (
-            <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground">
-              <Loader2 className="h-6 w-6 animate-spin" />
-              <span className="text-sm">
-                {wsStatus === "connecting" || wsStatus === "disconnected"
-                  ? "Connecting to backend..."
-                  : "Waiting for headlines..."}
-              </span>
+          {/* Side by side rather than a second tab: the brief stays visible while
+              scanning live headlines, instead of losing one view to see the other. */}
+          <div className="flex min-h-0 flex-1 overflow-hidden">
+            <div className="flex min-w-0 flex-1 flex-col">
+              <div className="border-b px-3 py-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                Live
+              </div>
+              {isEmpty ? (
+                <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                  <span className="text-sm">
+                    {wsStatus === "connecting" || wsStatus === "disconnected"
+                      ? "Connecting to backend..."
+                      : "Waiting for headlines..."}
+                  </span>
+                </div>
+              ) : viewMode === "list" ? (
+                <HeadlineList headlines={filtered} sortOrder={sortOrder} />
+              ) : (
+                <HeadlineTimeline headlines={filtered} sortOrder={sortOrder} />
+              )}
             </div>
-          ) : viewMode === "list" ? (
-            <HeadlineList headlines={filtered} sortOrder={sortOrder} />
-          ) : (
-            <HeadlineTimeline headlines={filtered} sortOrder={sortOrder} />
-          )}
+            <div className="flex min-w-0 flex-1 flex-col border-l">
+              <div className="border-b px-3 py-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                Open Brief
+              </div>
+              <BriefPage />
+            </div>
+          </div>
         </>
       )}
     </div>
