@@ -50,6 +50,7 @@ export default function App() {
   const [viewMode, setViewMode] = useState<ViewMode>("list")
   const [sortOrder, setSortOrder] = useState<SortOrder>("newest-first")
   const [tab, setTab] = useState<TabValue>("live")
+  const [showBrief, setShowBrief] = useState(true)
   const notifiedRef = useRef(false)
 
   useEffect(() => {
@@ -104,6 +105,8 @@ export default function App() {
         onPollingToggle={setPollingEnabled}
         tab={tab}
         onTabChange={setTab}
+        showBrief={showBrief}
+        onShowBriefChange={setShowBrief}
       />
       {tab === "brief" ? (
         <BriefPage />
@@ -133,12 +136,14 @@ export default function App() {
                 <HeadlineTimeline headlines={filtered} sortOrder={sortOrder} />
               )}
             </div>
-            <div className="flex min-w-0 flex-1 flex-col border-l">
-              <div className="border-b px-3 py-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                Open Brief
+            {showBrief && (
+              <div className="flex min-w-0 flex-1 flex-col border-l">
+                <div className="border-b px-3 py-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Open Brief
+                </div>
+                <BriefPage />
               </div>
-              <BriefPage />
-            </div>
+            )}
           </div>
         </>
       )}

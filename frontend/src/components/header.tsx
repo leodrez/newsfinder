@@ -1,5 +1,6 @@
 import { Moon, Sun, List, Clock, Wifi, WifiOff, Brain, ArrowDownUp, Pause, Play, LogOut } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,6 +26,8 @@ interface HeaderProps {
   onPollingToggle: (enabled: boolean) => void
   tab: TabValue
   onTabChange: (tab: TabValue) => void
+  showBrief: boolean
+  onShowBriefChange: (show: boolean) => void
 }
 
 export function Header({
@@ -38,6 +41,8 @@ export function Header({
   onPollingToggle,
   tab,
   onTabChange,
+  showBrief,
+  onShowBriefChange,
 }: HeaderProps) {
   const { setTheme } = useTheme()
   const { signOut } = useAuth()
@@ -105,6 +110,14 @@ export function Header({
               >
                 <ArrowDownUp className={`h-3.5 w-3.5 transition-transform ${sortOrder === "oldest-first" ? "rotate-180" : ""}`} />
               </Button>
+
+              <div className="w-px h-4 bg-border mx-0.5" />
+
+              {/* Open Brief column visibility */}
+              <label className="flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground">
+                <Switch checked={showBrief} onCheckedChange={onShowBriefChange} />
+                Brief
+              </label>
             </>
           )}
 
