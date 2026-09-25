@@ -31,12 +31,18 @@ export type Regime = "mean-reversion" | "trending" | "neutral"
 
 export interface GammaSnapshot {
   spot: number
-  /** Net dealer gamma in dollars per 1% move. Positive = dealers long gamma. */
+  /**
+   * Dealer gamma at spot in dollars per 1% move: the 1-45 DTE book, DTE-weighted
+   * and re-priced with Black-Scholes. Positive = dealers long gamma at this level.
+   */
   netGex: number
-  /** Strike where cumulative GEX crosses from negative to positive, or null. */
+  /**
+   * Zero-gamma level: where the re-priced book's exposure crosses zero, taking
+   * the crossing nearest spot within 8%. Base-axis points, 2 dp, or null.
+   */
   flipStrike: number | null
   topStrikes: GammaStrike[]
-  regime: "mean-reversion" | "trending"
+  regime: Regime
   contractsCounted: number
   strikesCounted: number
   /** Per-chain contributions; one entry for a single-chain snapshot. */

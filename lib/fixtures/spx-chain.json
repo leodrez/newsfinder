@@ -5,15 +5,17 @@
     "current_price": 100,
     "last_trade_time": "2026-08-28T10:15:00",
     "options": [
-      { "option": "SPX260918C00100000", "open_interest": 1000, "gamma": 0.01 },
-      { "option": "SPX260918P00100000", "open_interest": 400, "gamma": 0.01 },
-      { "option": "SPX260918P00090000", "open_interest": 500, "gamma": 0.02 },
-      { "option": "SPX260918C00110000", "open_interest": 800, "gamma": 0.01 },
-      { "option": "SPX261012C00100000", "open_interest": 100, "gamma": 0.01 },
-      { "option": "SPX261218C00110000", "open_interest": 9999, "gamma": 0.05 },
-      { "option": "SPX260918C00105000", "open_interest": 900, "gamma": 0 },
-      { "option": "SPX260918C00095000", "open_interest": 0, "gamma": 0.005 },
-      { "option": "NOT-AN-OSI-SYMBOL", "open_interest": 100, "gamma": 0.1 }
+      { "option": "SPX260918C00100000", "open_interest": 1000, "iv": 0.2 },
+      { "option": "SPX260918P00100000", "open_interest": 400, "iv": 0.2 },
+      { "option": "SPX260918P00090000", "open_interest": 500, "iv": 0.25 },
+      { "option": "SPX260918C00110000", "open_interest": 800, "iv": 0.18 },
+      { "option": "SPX261012C00100000", "open_interest": 100, "iv": 0.2 },
+      { "option": "SPX261218C00110000", "open_interest": 9999, "iv": 0.2 },
+      { "option": "SPX260918C00105000", "open_interest": 900, "iv": 0 },
+      { "option": "SPX260918C00095000", "open_interest": 0, "iv": 0.2 },
+      { "option": "SPX260828C00100000", "open_interest": 5000, "iv": 0.3 },
+      { "option": "SPX260918C00120000", "open_interest": 700, "iv": 5.5 },
+      { "option": "NOT-AN-OSI-SYMBOL", "open_interest": 100, "iv": 0.2 }
     ]
   }
 }

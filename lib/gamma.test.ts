@@ -9,6 +9,7 @@ import {
   computeGamma,
   isGammaSnapshotTrustworthy,
   parseEasternTimestamp,
+  yearsToExpiry,
   bsGamma,
   classifyRegime,
   contractGex,
@@ -23,49 +24,84 @@ const chain = JSON.parse(
 ) as CboeChain
 const NOW = new Date("2026-08-28T00:00:00Z")
 
-test("nets calls positive and puts negative", () => {
+const near = (actual: number, expected: number, tol: number, msg?: string) =>
+  assert.ok(Math.abs(actual - expected) <= tol, msg ?? `${actual} not within ${tol} of ${expected}`)
+
+test("gamma at spot is positive when calls dominate at the money", () => {
   const g = computeGamma(chain, NOW)
-  assert.equal(g.netGex, 50000)
+  assert.ok(g.netGex > 0)
   assert.equal(g.spot, 100)
+  assert.equal(g.regime, "mean-reversion")
 })
 
-test("positive net GEX classifies as mean-reversion", () => {
-  assert.equal(computeGamma(chain, NOW).regime, "mean-reversion")
+test("flip is the re-priced zero crossing, not the first positive cumulative strike", () => {
+  // Puts at 90 outweigh calls only well below spot. The old cumulative walk put
+  // the flip at 110 (the first call wall); the profile crosses near 93.8.
+  const flip = computeGamma(chain, NOW).flipStrike
+  assert.ok(flip != null && flip > 92 && flip < 96, `flip ${flip}`)
 })
 
-test("negative net GEX classifies as trending", () => {
-  const bearish: CboeChain = {
+test("regime is decided by which side of the flip spot sits on", () => {
+  // Equal-size calls at 105 and puts at 95: the flip sits at ~99.76 whatever spot is.
+  const book = (spot: number): CboeChain => ({
+    data: {
+      current_price: spot,
+      options: [
+        { option: "SPX260918C00105000", open_interest: 1000, iv: 0.2 },
+        { option: "SPX260918P00095000", open_interest: 1000, iv: 0.2 },
+      ],
+    },
+  })
+  const atFlip = computeGamma(book(100), NOW)
+  near(atFlip.flipStrike!, 99.76, 0.05)
+  assert.equal(atFlip.regime, "neutral", "0.24% from the flip is inside the band")
+
+  const above = computeGamma(book(103), NOW)
+  assert.equal(above.regime, "mean-reversion")
+  assert.ok(above.netGex > 0)
+
+  const below = computeGamma(book(97), NOW)
+  assert.equal(below.regime, "trending")
+  assert.ok(below.netGex < 0)
+})
+
+test("a one-sided book has no flip and classifies by the sign at spot", () => {
+  const onlyPuts: CboeChain = {
     data: {
       current_price: 100,
-      options: [{ option: "SPX260918P00090000", open_interest: 500, gamma: 0.02 }],
+      options: [{ option: "SPX260918P00090000", open_interest: 500, iv: 0.2 }],
     },
   }
-  assert.equal(computeGamma(bearish, NOW).regime, "trending")
+  const g = computeGamma(onlyPuts, NOW)
+  assert.strictEqual(g.flipStrike, null)
+  assert.equal(g.regime, "trending")
+  assert.ok(g.netGex < 0)
 })
 
-test("excludes contracts beyond 45 DTE, without gamma, or without open interest", () => {
+test("excludes contracts beyond 45 DTE, without usable IV, without open interest, or expiring today", () => {
   const g = computeGamma(chain, NOW)
-  assert.equal(g.strikesCounted, 3, "105 and 95 must not create strikes")
-  assert.equal(g.contractsCounted, 2800, "the 112-DTE contract's 9999 OI must be excluded")
+  assert.equal(g.strikesCounted, 3, "105, 95 and 120 must not create strikes")
+  assert.equal(g.contractsCounted, 2800, "112-DTE 9999 OI and 0DTE 5000 OI must be excluded")
 })
 
-test("finds the zero-gamma flip where cumulative GEX turns positive", () => {
-  assert.equal(computeGamma(chain, NOW).flipStrike, 110)
-})
-
-test("returns a null flip when cumulative GEX never turns positive", () => {
-  const allNegative: CboeChain = {
+test("rejects a chain with no usable implied volatility", () => {
+  const zeroedGreeks: CboeChain = {
     data: {
       current_price: 100,
-      options: [{ option: "SPX260918P00090000", open_interest: 500, gamma: 0.02 }],
+      options: [
+        { option: "SPX260918C00100000", open_interest: 1000, iv: 0 },
+        { option: "SPX260918P00100000", open_interest: 1000, iv: 0 },
+      ],
     },
   }
-  assert.equal(computeGamma(allNegative, NOW).flipStrike, null)
+  const g = computeGamma(zeroedGreeks, NOW)
+  assert.equal(isGammaSnapshotTrustworthy(g, "SPX", NOW), "Cboe SPX chain yielded no priced strikes within 45 DTE")
 })
 
 test("ranks top strikes by absolute exposure", () => {
   const g = computeGamma(chain, NOW)
-  assert.deepEqual(g.topStrikes.map((s) => s.strike), [90, 110, 100])
+  assert.deepEqual(g.topStrikes.map((s) => s.strike), [100, 110, 90])
+  assert.ok(g.topStrikes[2].gex < 0, "the 90 put strike is short gamma")
 })
 
 test("ignores symbols that are not OSI-format", () => {
@@ -74,20 +110,18 @@ test("ignores symbols that are not OSI-format", () => {
 
 test("validation rejects zero or non-finite spot price", () => {
   const zeroSpot = computeGamma(
-    { data: { current_price: 0, options: [{ option: "SPX260918C00100000", open_interest: 100, gamma: 0.01 }] } },
+    { data: { current_price: 0, options: [{ option: "SPX260918C00100000", open_interest: 100, iv: 0.2 }] } },
     NOW
   )
-  const error = isGammaSnapshotTrustworthy(zeroSpot, "SPX")
-  assert.equal(error, "Cboe SPX chain returned no usable spot price")
+  assert.equal(isGammaSnapshotTrustworthy(zeroSpot, "SPX", NOW), "Cboe SPX chain returned no usable spot price")
 })
 
 test("validation rejects snapshot with no priced strikes", () => {
   const noStrikes = computeGamma(
-    { data: { current_price: 100, options: [{ option: "SPX260918C00100000", open_interest: 0, gamma: 0.01 }] } },
+    { data: { current_price: 100, options: [{ option: "SPX260918C00100000", open_interest: 0, iv: 0.2 }] } },
     NOW
   )
-  const error = isGammaSnapshotTrustworthy(noStrikes, "SPX")
-  assert.equal(error, "Cboe SPX chain yielded no priced strikes within 45 DTE")
+  assert.equal(isGammaSnapshotTrustworthy(noStrikes, "SPX", NOW), "Cboe SPX chain yielded no priced strikes within 45 DTE")
 })
 
 test("includes contracts at exactly 45 DTE", () => {
@@ -95,13 +129,20 @@ test("includes contracts at exactly 45 DTE", () => {
   const exactly45Dte: CboeChain = {
     data: {
       current_price: 100,
-      options: [{ option: "SPX261012C00100000", open_interest: 500, gamma: 0.01 }],
+      options: [{ option: "SPX261012C00100000", open_interest: 500, iv: 0.2 }],
     },
   }
   const g = computeGamma(exactly45Dte, NOW)
   assert.equal(g.contractsCounted, 500, "45-DTE contract must be included")
   assert.equal(g.strikesCounted, 1)
 })
+
+test("time to expiry runs to the 16:00 ET close on expiry day", () => {
+  // 2026-09-18 16:00 EDT is 20:00 UTC; from 2026-08-28 00:00 UTC that is 21 days 20 hours.
+  near(yearsToExpiry(2026, 9, 18, NOW.getTime()), (21 + 20 / 24) / 365, 1e-9)
+  assert.equal(yearsToExpiry(2026, 8, 27, NOW.getTime()), 0, "already expired floors at zero")
+})
+
 
 test("reads an Eastern daylight-time stamp as the correct instant", () => {
   assert.equal(
@@ -141,7 +182,7 @@ test("reports a null delay when either stamp is missing", () => {
   const undated: CboeChain = {
     data: {
       current_price: 100,
-      options: [{ option: "SPX260918C00100000", open_interest: 100, gamma: 0.01 }],
+      options: [{ option: "SPX260918C00100000", open_interest: 100, iv: 0.2 }],
     },
   }
   const g = computeGamma(undated, NOW)
@@ -158,11 +199,12 @@ const qqqChain = JSON.parse(
   readFileSync(new URL("./fixtures/qqq-chain.json", import.meta.url), "utf8")
 ) as CboeChain
 
-test("sums dollar gamma across chains and reports the base chain's spot", () => {
-  // Each fixture contract is built to contribute exactly $90m per 1% move, so
-  // four contracts across two chains must net $360m regardless of scale.
+test("sums gamma at spot across chains and reports the base chain's spot", () => {
   const g = computeCombinedGamma([ndxChain, qqqChain], NOW, { strikeBucket: 25 })
-  assert.equal(g.netGex, 3.6e8)
+  const ndxAlone = computeGamma(ndxChain, NOW).netGex
+  const qqqAlone = computeGamma(qqqChain, NOW).netGex
+  assert.ok(ndxAlone > 0 && qqqAlone > 0)
+  near(g.netGex, ndxAlone + qqqAlone, 1e-3, "dollar gamma per 1% is additive across underlyings")
   assert.equal(g.spot, 30000, "the merged snapshot reports the base chain's spot")
 })
 
@@ -175,8 +217,21 @@ test("scales overlay strikes onto the base chain's axis by the spot ratio", () =
 test("buckets merged strikes onto a common grid", () => {
   const g = computeCombinedGamma([ndxChain, qqqChain], NOW, { strikeBucket: 25 })
   assert.equal(g.strikesCounted, 2, "NDX 30390 must bucket onto 30400 with QQQ 760")
-  const merged = g.topStrikes.find((s) => s.strike === 30400)
-  assert.equal(merged?.gex, 1.8e8, "both chains' exposure lands in one bucket")
+  const merged = g.topStrikes.find((s) => s.strike === 30400)!
+  const ndxOnly = computeGamma(ndxChain, NOW).topStrikes.find((s) => s.strike === 30390)!
+  assert.ok(merged.gex > ndxOnly.gex, "both chains' exposure lands in one bucket")
+})
+
+test("combined flip is reported in base-axis points", () => {
+  // NDX calls at spot and QQQ puts 4% below it, scaled x40 onto 28800: the
+  // crossing lands near NDX 29464, never near QQQ 720-750.
+  const puts: CboeChain = {
+    ...qqqChain,
+    data: { ...qqqChain.data, options: [{ option: "QQQ260918P00720000", open_interest: 8000, iv: 0.2 }] },
+  }
+  const g = computeCombinedGamma([ndxChain, puts], NOW, { strikeBucket: 25 })
+  assert.ok(g.flipStrike != null && g.flipStrike > 29000 && g.flipStrike < 30000, `flip ${g.flipStrike}`)
+  assert.equal(g.regime, "mean-reversion", "spot 30000 is 1.8% above the flip")
 })
 
 test("counts open interest across every chain", () => {
@@ -186,11 +241,14 @@ test("counts open interest across every chain", () => {
 
 test("reports each chain's own contribution and strike ratio", () => {
   const g = computeCombinedGamma([ndxChain, qqqChain], NOW, { strikeBucket: 25 })
-  assert.deepEqual(g.components, [
-    { symbol: "^NDX", strikeRatio: 1, netGex: 1.8e8, contractsCounted: 200 },
-    { symbol: "QQQ", strikeRatio: 40, netGex: 1.8e8, contractsCounted: 8000 },
+  assert.deepEqual(g.components.map((c) => [c.symbol, c.strikeRatio, c.contractsCounted]), [
+    ["^NDX", 1, 200],
+    ["QQQ", 40, 8000],
   ])
+  near(g.components[0].netGex, computeGamma(ndxChain, NOW).netGex, 1e-3)
+  near(g.components[1].netGex, computeGamma(qqqChain, NOW).netGex, 1e-3)
 })
+
 
 test("reports the worst delay and the stalest stamps across chains", () => {
   const g = computeCombinedGamma([ndxChain, qqqChain], NOW, { strikeBucket: 25 })
@@ -205,7 +263,7 @@ test("names the index in trust errors so a failure says which chain broke", () =
     NOW
   )
   assert.equal(
-    isGammaSnapshotTrustworthy(noStrikes, "Nasdaq 100"),
+    isGammaSnapshotTrustworthy(noStrikes, "Nasdaq 100", NOW),
     "Cboe Nasdaq 100 chain yielded no priced strikes within 45 DTE"
   )
 })
@@ -243,7 +301,7 @@ test("merges an index's chains into one snapshot", async () => {
     NOW,
     stubFetch({ _NDX: ndxChain, QQQ: qqqChain })
   )
-  assert.equal(g.netGex, 3.6e8)
+  assert.ok(g.netGex > 0)
   assert.deepEqual(g.components.map((c) => c.symbol), ["^NDX", "QQQ"])
 })
 
@@ -258,7 +316,7 @@ test("fails the whole index when one of its chains is unavailable", async () => 
 
 test("gathers every index, keeping one index's failure off the others", async () => {
   const set = await fetchGammaSet(NOW, stubFetch({ _NDX: ndxChain, QQQ: qqqChain }))
-  assert.equal(set.nq?.netGex, 3.6e8, "NQ still reports despite SPX being unavailable")
+  assert.ok((set.nq?.netGex ?? 0) > 0, "NQ still reports despite SPX being unavailable")
   assert.strictEqual(set.spx, null)
   assert.match(set.errors.spx ?? "", /S&P 500 \(SPX\) option chain request failed/)
   assert.strictEqual(set.errors.nq, undefined)
@@ -276,9 +334,6 @@ test("fetches indices one after another, never overlapping their chains", async 
     "done QQQ",
   ])
 })
-
-const near = (actual: number, expected: number, tol: number, msg?: string) =>
-  assert.ok(Math.abs(actual - expected) <= tol, msg ?? `${actual} not within ${tol} of ${expected}`)
 
 test("Black-Scholes gamma matches the closed form at and away from the money", () => {
   // phi(d1) / (S sigma sqrt(T)) with d1 = (ln(S/K) + 0.5 sigma^2 T) / (sigma sqrt(T))

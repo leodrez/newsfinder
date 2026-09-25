@@ -8,6 +8,18 @@ const OSI_RE = /^([A-Z^]+)(\d{2})(\d{2})(\d{2})([CP])(\d{8})$/
 
 /** Only near-dated contracts carry meaningful dealer hedging pressure. */
 export const MAX_DTE = 45
+/** Contracts inside this many days are tapered; 0DTE contributes nothing. */
+export const DTE_WEIGHT_FULL = 5
+/** Cboe reports junk IV (e.g. 5.54) on deep-ITM rows; treat outside this as unpriced. */
+export const MIN_IV = 0.01
+export const MAX_IV = 2
+/** Profile runs spot × (1 ± HALF_WIDTH) in steps of STEP. */
+export const PROFILE_HALF_WIDTH = 0.15
+export const PROFILE_STEP = 0.001
+/** A crossing further than this from spot is a far-tail artifact, not a level. */
+export const MAX_FLIP_DISTANCE = 0.08
+/** Within this fraction of spot from the flip, hedging flows are too small to set a regime. */
+export const NEUTRAL_BAND = 0.0025
 
 /** Cboe stamps `data.last_trade_time` as bare Eastern wall-clock: `YYYY-MM-DDTHH:MM:SS`. */
 const ET_STAMP_RE = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})$/
@@ -63,7 +75,9 @@ export function parseEasternTimestamp(text: string | undefined | null): number |
 export interface CboeOption {
   option: string
   open_interest?: number
-  gamma?: number
+  /** Implied volatility as a decimal. Cboe's own `gamma` field is not used: it
+   *  is zeroed on far-OTM rows and cannot be re-priced away from spot. */
+  iv?: number
 }
 
 export interface CboeChain {
@@ -88,74 +102,92 @@ function parseChainStamp(text: string | undefined): number | null {
   return isNaN(ms) ? null : ms
 }
 
+const pad2 = (n: number) => String(n).padStart(2, "0")
+
 /**
- * Aggregates dealer gamma exposure by strike under the standard
- * dealer-long-calls / dealer-short-puts convention. Result is dollars of
- * gamma per 1% move in spot.
+ * Years (of 365 days) from `nowMs` to the 16:00 ET close on the expiry date.
+ * Measuring to the close rather than to midnight is what makes a Black-Scholes
+ * re-price agree with Cboe's own gamma on short-dated rows.
  */
+export function yearsToExpiry(year: number, month: number, day: number, nowMs: number): number {
+  const close = parseEasternTimestamp(`${year}-${pad2(month)}-${pad2(day)}T16:00:00`)
+  if (close == null) return 0
+  return Math.max(close - nowMs, 0) / (365 * DAY_MS)
+}
+
+/** Single-chain convenience over computeCombinedGamma. */
 export function computeGamma(chain: CboeChain, now: Date): GammaSnapshot {
   return computeCombinedGamma([chain], now)
 }
 
-interface ChainTally {
-  component: GammaComponent
-  quoteTs: number | null
-  lastTradeTs: number | null
-}
-
 /**
- * Accumulates one chain's exposure into `byStrike`, which may already hold
- * another chain's. Strikes are scaled by `strikeRatio` onto the base chain's
- * axis and snapped to `strikeBucket`, so an ETF strike and the index strike it
- * corresponds to land on one level instead of two near-duplicates.
- *
- * Dollar gamma needs no such conversion: each chain's exposure is computed
- * from its own spot and expressed as dollars per 1% move, a unit that is
- * already common across underlyings and therefore additive.
+ * Turns one chain's rows into priced contracts on the base axis. Strikes are
+ * scaled by `strikeRatio` and snapped to `strikeBucket`, so an ETF strike and
+ * the index strike it corresponds to land on one level.
  */
-function tallyChain(
+function priceChain(
   chain: CboeChain,
   now: Date,
   strikeRatio: number,
-  strikeBucket: number,
-  byStrike: Map<number, number>
-): ChainTally {
+  strikeBucket: number
+): PricedContract[] {
   const spot = chain.data.current_price
   const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
-  const dollarGammaPerPct = spot * spot * 0.01
-
-  let netGex = 0
-  let contractsCounted = 0
+  const contracts: PricedContract[] = []
 
   for (const option of chain.data.options) {
     const match = OSI_RE.exec(option.option)
     if (!match) continue
 
-    const expiryUtc = Date.UTC(2000 + Number(match[2]), Number(match[3]) - 1, Number(match[4]))
-    const dte = (expiryUtc - todayUtc) / DAY_MS
+    const year = 2000 + Number(match[2])
+    const month = Number(match[3])
+    const day = Number(match[4])
+    const dte = (Date.UTC(year, month - 1, day) - todayUtc) / DAY_MS
     if (dte < 0 || dte > MAX_DTE) continue
 
     const openInterest = option.open_interest ?? 0
-    const gamma = option.gamma ?? 0
-    if (!openInterest || !gamma) continue
+    const iv = option.iv ?? 0
+    if (!openInterest || iv < MIN_IV || iv > MAX_IV) continue
 
-    const scaled = (Number(match[6]) / 1000) * strikeRatio
-    const strike = strikeBucket > 0 ? Math.round(scaled / strikeBucket) * strikeBucket : scaled
-    const sign = match[5] === "C" ? 1 : -1
-    const gex = gamma * openInterest * 100 * dollarGammaPerPct * sign
+    const weight = dteWeight(dte)
+    const years = yearsToExpiry(year, month, day, now.getTime())
+    if (weight <= 0 || years <= 0) continue
 
-    byStrike.set(strike, (byStrike.get(strike) ?? 0) + gex)
-    netGex += gex
-    contractsCounted += openInterest
+    const strike = Number(match[6]) / 1000
+    const scaled = strike * strikeRatio
+    const bucket = strikeBucket > 0 ? Math.round(scaled / strikeBucket) * strikeBucket : scaled
+
+    contracts.push({
+      spot,
+      strike,
+      bucket,
+      sign: match[5] === "C" ? 1 : -1,
+      openInterest,
+      iv,
+      years,
+      weight,
+    })
   }
+  return contracts
+}
 
+interface ChainTally {
+  component: GammaComponent
+  contracts: PricedContract[]
+  quoteTs: number | null
+  lastTradeTs: number | null
+}
+
+function tallyChain(chain: CboeChain, now: Date, strikeRatio: number, strikeBucket: number): ChainTally {
+  const contracts = priceChain(chain, now, strikeRatio, strikeBucket)
   return {
     component: {
       symbol: chain.data.symbol ?? "unknown",
       strikeRatio,
-      netGex,
-      contractsCounted,
+      netGex: profileValue(contracts, 1),
+      contractsCounted: contracts.reduce((total, c) => total + c.openInterest, 0),
     },
+    contracts,
     quoteTs: parseChainStamp(chain.timestamp),
     lastTradeTs: parseEasternTimestamp(chain.data.last_trade_time),
   }
@@ -165,6 +197,11 @@ function tallyChain(
  * Merges several option chains on the same underlying into one dealer-gamma
  * reading. `chains[0]` is the base: the snapshot's spot, and the strike axis
  * every other chain is scaled onto.
+ *
+ * Exposure is the weighted book re-priced with Black-Scholes. The same
+ * evaluation gives gamma at spot (`netGex`), the per-strike split
+ * (`topStrikes`) and, swept across a range of hypothetical spot levels, the
+ * zero-gamma level (`flipStrike`), so the three can never disagree.
  *
  * Staleness is reported conservatively — the oldest build, the stalest tape
  * stamp, and the worst per-chain delay — so the merged reading is never
@@ -178,28 +215,23 @@ export function computeCombinedGamma(
   const strikeBucket = options.strikeBucket ?? 0
   const baseSpot = chains[0]?.data.current_price ?? 0
 
-  const byStrike = new Map<number, number>()
   const tallies = chains.map((chain) => {
     const spot = chain.data.current_price
     // A chain with no usable spot cannot be placed on the base axis; it still
     // contributes dollar gamma, so scale it by 1 rather than by NaN.
     const ratio = spot && baseSpot ? baseSpot / spot : 1
-    return tallyChain(chain, now, ratio, strikeBucket, byStrike)
+    return tallyChain(chain, now, ratio, strikeBucket)
   })
+  const contracts = tallies.flatMap((t) => t.contracts)
 
+  const byStrike = new Map<number, number>()
+  for (const c of contracts) byStrike.set(c.bucket, (byStrike.get(c.bucket) ?? 0) + contractGex(c, 1))
   const strikes: GammaStrike[] = [...byStrike.entries()].map(([strike, gex]) => ({ strike, gex }))
-  const netGex = strikes.reduce((total, s) => total + s.gex, 0)
-
-  // Walk strikes low to high; the flip is where cumulative exposure turns positive.
-  let cumulative = 0
-  let flipStrike: number | null = null
-  for (const s of [...strikes].sort((a, b) => a.strike - b.strike)) {
-    const previous = cumulative
-    cumulative += s.gex
-    if (previous < 0 && cumulative >= 0) flipStrike = s.strike
-  }
-
   const topStrikes = [...strikes].sort((a, b) => Math.abs(b.gex) - Math.abs(a.gex)).slice(0, 5)
+
+  const netGex = profileValue(contracts, 1)
+  const flipMultiplier = findFlipMultiplier(contracts)
+  const flipStrike = flipMultiplier == null ? null : Math.round(flipMultiplier * baseSpot * 100) / 100
 
   // Cboe's own two stamps are what let the UI state the delay as a measurement
   // rather than repeating a documented figure that could quietly stop being true.
@@ -218,7 +250,7 @@ export function computeCombinedGamma(
     netGex,
     flipStrike,
     topStrikes,
-    regime: netGex >= 0 ? "mean-reversion" : "trending",
+    regime: classifyRegime(netGex, baseSpot, flipStrike),
     contractsCounted: tallies.reduce((total, t) => total + t.component.contractsCounted, 0),
     strikesCounted: strikes.length,
     components: tallies.map((t) => t.component),
@@ -235,7 +267,8 @@ export function computeCombinedGamma(
  */
 export function isGammaSnapshotTrustworthy(
   snapshot: GammaSnapshot,
-  label: string
+  label: string,
+  now: Date
 ): string | null {
   if (!snapshot.spot || !isFinite(snapshot.spot)) {
     return `Cboe ${label} chain returned no usable spot price`
@@ -335,7 +368,7 @@ export async function fetchIndexGamma(
   }
 
   const snapshot = computeCombinedGamma(chains, now, { strikeBucket: index.strikeBucket })
-  const trustError = isGammaSnapshotTrustworthy(snapshot, index.label)
+  const trustError = isGammaSnapshotTrustworthy(snapshot, index.label, now)
   if (trustError) throw new Error(trustError)
 
   return snapshot
@@ -378,19 +411,6 @@ export async function fetchGammaSet(
 // zero-gamma level is where that profile crosses zero, and the regime is which
 // side of that level spot sits on. See
 // docs/superpowers/specs/2026-09-25-gamma-regime-redesign.md.
-
-/** Contracts inside this many days are tapered; 0DTE contributes nothing. */
-export const DTE_WEIGHT_FULL = 5
-/** Cboe reports junk IV (e.g. 5.54) on deep-ITM rows; treat outside this as unpriced. */
-export const MIN_IV = 0.01
-export const MAX_IV = 2
-/** Profile runs spot × (1 ± HALF_WIDTH) in steps of STEP. */
-export const PROFILE_HALF_WIDTH = 0.15
-export const PROFILE_STEP = 0.001
-/** A crossing further than this from spot is a far-tail artifact, not a level. */
-export const MAX_FLIP_DISTANCE = 0.08
-/** Within this fraction of spot from the flip, hedging flows are too small to set a regime. */
-export const NEUTRAL_BAND = 0.0025
 
 export interface PricedContract {
   /** Spot of the chain this contract belongs to. */

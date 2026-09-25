@@ -127,6 +127,11 @@ Each quote yields absolute change and percent change against its anchor.
 
 ### 5.4 Gamma
 
+> **Superseded 2026-09-25** by `2026-09-25-gamma-regime-redesign.md`. The formula below
+> used Cboe's gamma field, a cumulative-strike flip, and the sign of net GEX for the
+> regime; the redesign re-prices the book and classifies by spot versus the zero-gamma
+> level. Kept for history.
+
 `https://cdn.cboe.com/api/global/delayed_quotes/options/_SPX.json` (~12.8MB, keyless).
 Contract symbols are OSI-format and parse as `/^([A-Z^]+)(\d{2})(\d{2})(\d{2})([CP])(\d{8})$/`,
 yielding root, expiry, right, and strike times 1000.
@@ -177,6 +182,11 @@ Reuses `LLM_MODEL` and the existing `ANTHROPIC_API_KEY`. Roughly one Haiku call 
 morning.
 
 ## 7. Regime classification
+
+> **Superseded 2026-09-25** by `2026-09-25-gamma-regime-redesign.md`. The formula below
+> used Cboe's gamma field, a cumulative-strike flip, and the sign of net GEX for the
+> regime; the redesign re-prices the book and classifies by spot versus the zero-gamma
+> level. Kept for history.
 
 A pure function over the gamma output. No LLM involvement, so it is deterministic and
 unit-testable.

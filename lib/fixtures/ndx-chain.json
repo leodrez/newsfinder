@@ -5,8 +5,8 @@
     "current_price": 30000,
     "last_trade_time": "2026-08-28T10:15:00",
     "options": [
-      { "option": "NDX260918C30000000", "open_interest": 100, "gamma": 0.001 },
-      { "option": "NDX260918C30390000", "open_interest": 100, "gamma": 0.001 }
+      { "option": "NDX260918C30000000", "open_interest": 100, "iv": 0.2 },
+      { "option": "NDX260918C30390000", "open_interest": 100, "iv": 0.2 }
     ]
   }
 }
