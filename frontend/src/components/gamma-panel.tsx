@@ -85,6 +85,16 @@ export function GammaPanel({
     },
   } as const
   const copy = REGIME_COPY[gamma.regime] ?? REGIME_COPY.neutral
+  // Without a flip the server fell back to the sign of gamma at spot, so the
+  // rationale must not claim a side of a level that does not exist.
+  const rationale =
+    gamma.flipStrike == null && gamma.regime !== "neutral"
+      ? `No zero-gamma level within 8% — the near-term book is net ${
+          gamma.regime === "mean-reversion" ? "long" : "short"
+        } gamma at spot, so dealer hedging ${
+          gamma.regime === "mean-reversion" ? "dampens moves" : "chases direction"
+        }.`
+      : copy.rationale
 
   // Spec §4: report which side of the level spot sits on and how far, in points
   // and percent, rather than leaving the reader to subtract two bare numbers.
@@ -108,7 +118,7 @@ export function GammaPanel({
       <div>
         <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
         <div className={`text-lg font-semibold ${copy.tone}`}>{copy.headline}</div>
-        <p className="mt-1 text-xs text-muted-foreground">{copy.rationale}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{rationale}</p>
       </div>
 
       <SentimentMeter sentiment={sentiment} label={sentimentLabel} error={sentimentError} />

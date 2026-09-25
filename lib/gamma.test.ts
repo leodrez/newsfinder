@@ -428,3 +428,29 @@ test("fetches chains from the cdn-api host", async () => {
   await fetchIndexGamma(GAMMA_INDICES.spx, NOW, spy)
   assert.deepEqual(urls, ["https://cdn-api.cboe.com/api/global/delayed_quotes/options/_SPX.json"])
 })
+
+test("a falling crossing is never the flip, so the regime always matches spot's side of it", () => {
+  // Review finding: put wall just above spot with call support below makes the
+  // profile fall through zero at ~7653. Taking that as the flip put spot "above
+  // the flip" while classifying "trending".
+  const book: CboeChain = {
+    data: {
+      current_price: 7700,
+      options: [
+        { option: "SPX260911C07400000", open_interest: 60000, iv: 0.18 },
+        { option: "SPX260911P07750000", open_interest: 50000, iv: 0.18 },
+        { option: "SPX260911C08200000", open_interest: 60000, iv: 0.18 },
+      ],
+    },
+  }
+  const g = computeGamma(book, NOW)
+  assert.ok(g.flipStrike == null || g.flipStrike > 7700, `flip ${g.flipStrike} must not be the falling crossing below spot`)
+  if (g.flipStrike != null && g.regime !== "neutral") {
+    assert.equal(g.regime === "mean-reversion", g.spot > g.flipStrike, "regime agrees with side of flip")
+  }
+})
+
+test("regime follows spot's side of the flip even when gamma at spot has the other sign", () => {
+  assert.equal(classifyRegime(-1e9, 100, 97), "mean-reversion", "above the flip is long gamma")
+  assert.equal(classifyRegime(1e9, 100, 103), "trending", "below the flip is short gamma")
+})

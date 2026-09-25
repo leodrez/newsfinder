@@ -70,7 +70,7 @@ guide; zerogex.io flip-calculation guide; jensolson/SPX-Gamma-Exposure; Emf29121
   so counting 0DTE OI under the long-calls/short-puts convention massively overstates it.
   ZeroGEX weights each contract by `min(1, DTE/5)`.
 
-## 3. New computation (`lib/gamma.ts`, `lib/gamma-model.ts`)
+## 3. New computation (`lib/gamma.ts`)
 
 **Book.** Contracts with 0 ≤ DTE ≤ 45 (calendar days from today's UTC date, as now),
 `open_interest > 0`, and `0.01 ≤ iv ≤ 2`. Cboe's `gamma` field is no longer read. Each
@@ -88,20 +88,24 @@ Multi-chain indices (NQ = NDX + QQQ) apply the same `m` to each chain's own spot
 profile is in relative terms and stays additive in dollars per 1%.
 
 **Profile and flip.** `m` runs from 0.85 to 1.15 in steps of 0.001 (301 points). Every
-sign change between neighbouring points is a candidate crossing, interpolated linearly. The
+rising crossing (negative to positive) between neighbouring points is a candidate, interpolated
+linearly; falling crossings are ignored, per SpotGamma/perfiliev. The
 flip is the candidate nearest `m = 1`, provided `|m − 1| ≤ 0.08`; otherwise `flipStrike` is
 null. `flipStrike = round(m* × S_base, 2 dp)`, on the base chain's axis.
 
 **Net GEX** is the profile at `m = 1`: the same weighted, re-priced book evaluated at spot.
 Per-strike `topStrikes` and per-chain `components[].netGex` are the same quantity
-partitioned by strike and by chain. One gamma source everywhere, so sign of `netGex` and
-side-of-flip can never disagree.
+partitioned by strike and by chain. One gamma source everywhere. With several crossings in
+range, gamma at spot can still have the opposite sign to spot's side of the flip; the regime
+follows the side of the flip, and `netGex` is shown as supporting size.
 
 **Regime.**
 
 ```
 neutral         if flipStrike != null and |spot − flipStrike| / spot < 0.0025
-mean-reversion  else if netGex ≥ 0
+mean-reversion  else if flipStrike != null and spot > flipStrike
+trending        else if flipStrike != null
+mean-reversion  else if netGex ≥ 0   (no flip within 8%)
 trending        else
 ```
 

@@ -491,10 +491,11 @@ export function profileValue(contracts: PricedContract[], multiplier: number): n
 }
 
 /**
- * Walks the profile across the grid and returns the multiplier of the zero
- * crossing nearest spot, or null when none lies within MAX_FLIP_DISTANCE.
- * Crossings in either direction count: the regime is the sign at spot, and the
- * nearest crossing is its boundary whichever way the curve runs.
+ * Walks the profile across the grid and returns the multiplier of the rising
+ * zero crossing (short gamma below, long gamma above) nearest spot, or null
+ * when none lies within MAX_FLIP_DISTANCE. Falling crossings are ignored — the
+ * SpotGamma/perfiliev convention — so "above the flip" always means the long
+ * gamma side and the regime can be read from spot's position alone.
  */
 export function findFlipMultiplier(contracts: PricedContract[]): number | null {
   if (!contracts.length) return null
@@ -506,7 +507,7 @@ export function findFlipMultiplier(contracts: PricedContract[]): number | null {
   for (let i = 1; i <= steps; i++) {
     const m = 1 - PROFILE_HALF_WIDTH + i * PROFILE_STEP
     const v = profileValue(contracts, m)
-    const crosses = (prevV < 0 && v >= 0) || (prevV > 0 && v <= 0)
+    const crosses = prevV < 0 && v >= 0
     if (crosses) {
       const mStar = prevM + (m - prevM) * (prevV / (prevV - v))
       const distance = Math.abs(mStar - 1)
@@ -520,9 +521,14 @@ export function findFlipMultiplier(contracts: PricedContract[]): number | null {
   return best
 }
 
+/**
+ * With a flip, the regime is spot's side of it (neutral inside the band); the
+ * sign of gamma at spot is only the fallback when no flip lies within range.
+ */
 export function classifyRegime(netGex: number, spot: number, flipStrike: number | null): Regime {
-  if (flipStrike != null && spot > 0 && Math.abs(spot - flipStrike) / spot < NEUTRAL_BAND) {
-    return "neutral"
+  if (flipStrike != null && spot > 0) {
+    if (Math.abs(spot - flipStrike) / spot < NEUTRAL_BAND) return "neutral"
+    return spot > flipStrike ? "mean-reversion" : "trending"
   }
   return netGex >= 0 ? "mean-reversion" : "trending"
 }
