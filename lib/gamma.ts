@@ -260,10 +260,24 @@ export function computeCombinedGamma(
   }
 }
 
+/** A midnight build read at 09:30 ET is ~9h old; yesterday's build read today is ~33h. */
+export const MAX_CHAIN_AGE_MS = 20 * 3600 * 1000
+
+const ET_SHORT = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+})
+
 /**
- * Validates that a snapshot contains usable market data. Returns an error
- * message naming `label`'s chain if the snapshot is not trustworthy, null if
- * valid — with several indices in play, a bare failure would not say which.
+ * Validates that a snapshot contains usable, current market data. Returns an
+ * error message naming `label`'s chain if the snapshot is not trustworthy,
+ * null if valid — with several indices in play, a bare failure would not say
+ * which.
  */
 export function isGammaSnapshotTrustworthy(
   snapshot: GammaSnapshot,
@@ -275,6 +289,12 @@ export function isGammaSnapshotTrustworthy(
   }
   if (snapshot.strikesCounted === 0) {
     return `Cboe ${label} chain yielded no priced strikes within ${MAX_DTE} DTE`
+  }
+  if (snapshot.quoteTs != null && now.getTime() - snapshot.quoteTs > MAX_CHAIN_AGE_MS) {
+    const hours = Math.round((now.getTime() - snapshot.quoteTs) / 3600000)
+    // Intl gives "Fri, Aug 28, 10:30"; drop the first comma only.
+    const built = ET_SHORT.format(new Date(snapshot.quoteTs)).replace(",", "")
+    return `Cboe ${label} chain is stale: built ${built} ET, ${hours}h ago`
   }
   return null
 }
@@ -306,7 +326,8 @@ export const GAMMA_INDICES: Record<"spx" | "nq", GammaIndex> = {
 type FetchImpl = (url: string, init?: RequestInit) => Promise<Response>
 
 function chainUrl(symbol: string): string {
-  return `https://cdn.cboe.com/api/global/delayed_quotes/options/${symbol}.json`
+  // cdn.cboe.com now answers 307 to this host; go straight to it.
+  return `https://cdn-api.cboe.com/api/global/delayed_quotes/options/${symbol}.json`
 }
 
 /** Throws with a specific, user-facing reason on every failure path. */

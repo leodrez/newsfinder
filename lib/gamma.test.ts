@@ -402,3 +402,29 @@ test("regime is neutral within the band around the flip, else the sign of gamma 
   assert.equal(classifyRegime(1e9, 100, null), "mean-reversion", "no flip: fall back to sign")
   assert.equal(classifyRegime(-1e9, 100, null), "trending")
 })
+
+test("rejects a chain built more than 20 hours before now", () => {
+  // Thu 24 Sep 2026 every fetch returned Wed's 00:56 ET build; the brief used it silently.
+  const g = computeGamma(chain, NOW) // built 2026-08-28 14:30 UTC = 10:30 EDT
+  const nextMorning = new Date("2026-08-30T00:00:00Z") // 33.5 h later
+  assert.equal(
+    isGammaSnapshotTrustworthy(g, "SPX", nextMorning),
+    "Cboe SPX chain is stale: built Fri Aug 28, 10:30 ET, 34h ago"
+  )
+})
+
+test("accepts an overnight build read the next morning", () => {
+  const g = computeGamma(chain, NOW)
+  const sameDay = new Date("2026-08-28T20:00:00Z") // 5.5 h later
+  assert.strictEqual(isGammaSnapshotTrustworthy(g, "SPX", sameDay), null)
+})
+
+test("fetches chains from the cdn-api host", async () => {
+  const urls: string[] = []
+  const spy = async (url: string): Promise<Response> => {
+    urls.push(url)
+    return { ok: true, status: 200, json: async () => chain } as Response
+  }
+  await fetchIndexGamma(GAMMA_INDICES.spx, NOW, spy)
+  assert.deepEqual(urls, ["https://cdn-api.cboe.com/api/global/delayed_quotes/options/_SPX.json"])
+})
