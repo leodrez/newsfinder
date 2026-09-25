@@ -30,7 +30,8 @@ export interface GammaSnapshot {
   netGex: number
   flipStrike: number | null
   topStrikes: GammaStrike[]
-  regime: "mean-reversion" | "trending"
+  /** Side of the zero-gamma level spot sits on; "neutral" within 0.25% of it. */
+  regime: "mean-reversion" | "trending" | "neutral"
   contractsCounted: number
   strikesCounted: number
   /** Per-chain contributions; one entry for a single-chain index like SPX. */

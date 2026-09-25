@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk"
 import { LLM_MODEL } from "./config"
 import { formatQuoteChange } from "./quote-format"
+import { renderGamma } from "./gamma-format"
 import type { Headline, OvernightQuote, GammaSnapshot, BriefSummary } from "./types"
 
 const MAX_HEADLINES = 120
@@ -58,14 +59,6 @@ interface RawBrief {
 function clampSentiment(value: number | undefined): number {
   if (!Number.isFinite(value)) return 0
   return Math.max(-100, Math.min(100, Math.round(value as number)))
-}
-
-function renderGamma(label: string, gamma: GammaSnapshot | null): string | null {
-  if (!gamma) return null
-  return (
-    `Dealer gamma ${label}: net ${(gamma.netGex / 1e9).toFixed(1)}bn per 1% (${gamma.regime}), ` +
-    `spot ${gamma.spot}, flip ${gamma.flipStrike ?? "n/a"}`
-  )
 }
 
 function renderTape(

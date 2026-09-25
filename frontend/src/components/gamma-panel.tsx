@@ -64,15 +64,33 @@ export function GammaPanel({
 
   // Trust the server's classification rather than recomputing it from netGex,
   // so the label can never diverge from what the backend actually decided.
-  const isLong = gamma.regime === "mean-reversion"
-  const verdict = isLong ? "Mean reversion / range" : "Trending / momentum"
-  const rationale = isLong
-    ? "Dealers are long gamma — hedging sells rallies and buys dips, suppressing volatility."
-    : "Dealers are short gamma — hedging chases direction, widening the expected range."
+  const REGIME_COPY = {
+    "mean-reversion": {
+      headline: "Long gamma · Mean reversion / range",
+      tone: "text-emerald-500",
+      rationale:
+        "Spot is above the zero-gamma level — dealer hedging sells rallies and buys dips, suppressing volatility.",
+    },
+    trending: {
+      headline: "Short gamma · Trending / momentum",
+      tone: "text-amber-500",
+      rationale:
+        "Spot is below the zero-gamma level — dealer hedging chases direction, widening the expected range.",
+    },
+    neutral: {
+      headline: "At the flip · Regime undecided",
+      tone: "text-sky-500",
+      rationale:
+        "Spot sits within 0.25% of the zero-gamma level — hedging flows are small either way, and the regime is set by which side spot breaks.",
+    },
+  } as const
+  const copy = REGIME_COPY[gamma.regime] ?? REGIME_COPY.neutral
 
-  // Spec §7: report which side of the regime boundary spot sits on and how far,
-  // rather than leaving the reader to subtract two bare numbers.
+  // Spec §4: report which side of the level spot sits on and how far, in points
+  // and percent, rather than leaving the reader to subtract two bare numbers.
   const flipDistance = gamma.flipStrike == null ? null : gamma.spot - gamma.flipStrike
+  const flipPct =
+    gamma.flipStrike == null ? null : (Math.abs(gamma.spot / gamma.flipStrike - 1) * 100).toFixed(2)
   const flipSide =
     flipDistance == null ? null : flipDistance > 0 ? "above flip" : flipDistance < 0 ? "below flip" : "at flip"
 
@@ -89,17 +107,15 @@ export function GammaPanel({
     <div className="space-y-3">
       <div>
         <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
-        <div className={`text-lg font-semibold ${isLong ? "text-emerald-500" : "text-amber-500"}`}>
-          {isLong ? "Long gamma" : "Short gamma"} · {verdict}
-        </div>
-        <p className="mt-1 text-xs text-muted-foreground">{rationale}</p>
+        <div className={`text-lg font-semibold ${copy.tone}`}>{copy.headline}</div>
+        <p className="mt-1 text-xs text-muted-foreground">{copy.rationale}</p>
       </div>
 
       <SentimentMeter sentiment={sentiment} label={sentimentLabel} error={sentimentError} />
 
       <div className="grid grid-cols-3 gap-3 text-sm">
         <div>
-          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Net GEX / 1%</div>
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Gamma at spot / 1%</div>
           <div className="tabular-nums">{formatBn(gamma.netGex)}</div>
         </div>
         <div>
@@ -109,7 +125,7 @@ export function GammaPanel({
           </div>
         </div>
         <div>
-          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Flip level</div>
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Zero-gamma level</div>
           <div className="tabular-nums">
             {gamma.flipStrike?.toLocaleString() ?? "none"}
           </div>
@@ -121,14 +137,16 @@ export function GammaPanel({
         <div className="text-sm tabular-nums">
           {flipDistance == null ? (
             <span className="text-muted-foreground">
-              No flip level in the chain — cumulative gamma never crosses zero.
+              No zero-gamma level within 8% of spot — the near-term book is one-sided.
             </span>
           ) : (
             <>
               <span className="font-medium">
                 {Math.abs(flipDistance).toLocaleString(undefined, { maximumFractionDigits: 2 })}
               </span>{" "}
-              <span>{flipSide}</span>
+              <span>
+                ({flipPct}%) {flipSide}
+              </span>
             </>
           )}
         </div>
@@ -178,7 +196,7 @@ export function GammaPanel({
           . Open interest is the prior session's close, so it lags a full session.
         </div>
         <div>
-          0–45 DTE · {gamma.strikesCounted} strikes ·{" "}
+          1–45 DTE, 0DTE excluded, under 5 DTE down-weighted · {gamma.strikesCounted} strikes ·{" "}
           {gamma.contractsCounted.toLocaleString()} contracts
           {overlays.length
             ? ` · ${overlays
