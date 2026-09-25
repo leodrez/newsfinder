@@ -1,4 +1,4 @@
-import type { GammaComponent, GammaSnapshot, GammaStrike } from "./types"
+import type { GammaComponent, GammaSnapshot, GammaStrike, Regime } from "./types"
 
 const FETCH_TIMEOUT_MS = 15000
 const DAY_MS = 86400000
@@ -370,4 +370,118 @@ export async function fetchGammaSet(
   }
 
   return set
+}
+
+// ── Option math ──────────────────────────────────────────────────────────────
+// Method follows what SpotGamma, MenthorQ, perfiliev and ZeroGEX publish: the
+// book's gamma is re-priced at a range of hypothetical spot levels, the
+// zero-gamma level is where that profile crosses zero, and the regime is which
+// side of that level spot sits on. See
+// docs/superpowers/specs/2026-09-25-gamma-regime-redesign.md.
+
+/** Contracts inside this many days are tapered; 0DTE contributes nothing. */
+export const DTE_WEIGHT_FULL = 5
+/** Cboe reports junk IV (e.g. 5.54) on deep-ITM rows; treat outside this as unpriced. */
+export const MIN_IV = 0.01
+export const MAX_IV = 2
+/** Profile runs spot × (1 ± HALF_WIDTH) in steps of STEP. */
+export const PROFILE_HALF_WIDTH = 0.15
+export const PROFILE_STEP = 0.001
+/** A crossing further than this from spot is a far-tail artifact, not a level. */
+export const MAX_FLIP_DISTANCE = 0.08
+/** Within this fraction of spot from the flip, hedging flows are too small to set a regime. */
+export const NEUTRAL_BAND = 0.0025
+
+export interface PricedContract {
+  /** Spot of the chain this contract belongs to. */
+  spot: number
+  /** The contract's own strike, in its own underlying's points. */
+  strike: number
+  /** Strike on the base axis after scaling and snapping; what topStrikes reports. */
+  bucket: number
+  /** +1 call (dealer long), -1 put (dealer short). */
+  sign: 1 | -1
+  openInterest: number
+  /** Implied volatility as a decimal, e.g. 0.19. */
+  iv: number
+  /** Time to expiry in years of 365 days. */
+  years: number
+  /** DTE taper, 0..1. */
+  weight: number
+}
+
+/** Standard normal density. */
+function phi(x: number): number {
+  return Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI)
+}
+
+/**
+ * Black-Scholes gamma per share with zero rate and dividend, which is how the
+ * published profile methods price it. Same for calls and puts. Checked against
+ * Cboe's own gamma field on a live chain: median ratio 1.000 for 1-7 DTE.
+ */
+export function bsGamma(spot: number, strike: number, years: number, iv: number): number {
+  if (years <= 0 || iv <= 0 || spot <= 0 || strike <= 0) return 0
+  const sigmaRootT = iv * Math.sqrt(years)
+  const d1 = (Math.log(spot / strike) + 0.5 * iv * iv * years) / sigmaRootT
+  return phi(d1) / (spot * sigmaRootT)
+}
+
+/**
+ * ZeroGEX's taper: a same-day contract's 1/sqrt(T) gamma spike must not set a
+ * multi-day level, and Cboe's participant data shows market-maker net 0DTE
+ * gamma is near zero anyway.
+ */
+export function dteWeight(dte: number): number {
+  return Math.max(0, Math.min(1, dte / DTE_WEIGHT_FULL))
+}
+
+/** Signed dollar gamma per 1% move, with the contract re-priced at spot × multiplier. */
+export function contractGex(c: PricedContract, multiplier: number): number {
+  const level = c.spot * multiplier
+  const gamma = bsGamma(level, c.strike, c.years, c.iv)
+  return c.sign * c.weight * c.openInterest * 100 * gamma * level * level * 0.01
+}
+
+export function profileValue(contracts: PricedContract[], multiplier: number): number {
+  let total = 0
+  for (const c of contracts) total += contractGex(c, multiplier)
+  return total
+}
+
+/**
+ * Walks the profile across the grid and returns the multiplier of the zero
+ * crossing nearest spot, or null when none lies within MAX_FLIP_DISTANCE.
+ * Crossings in either direction count: the regime is the sign at spot, and the
+ * nearest crossing is its boundary whichever way the curve runs.
+ */
+export function findFlipMultiplier(contracts: PricedContract[]): number | null {
+  if (!contracts.length) return null
+  const steps = Math.round((2 * PROFILE_HALF_WIDTH) / PROFILE_STEP)
+  let best: number | null = null
+  let prevM = 1 - PROFILE_HALF_WIDTH
+  let prevV = profileValue(contracts, prevM)
+
+  for (let i = 1; i <= steps; i++) {
+    const m = 1 - PROFILE_HALF_WIDTH + i * PROFILE_STEP
+    const v = profileValue(contracts, m)
+    const crosses = (prevV < 0 && v >= 0) || (prevV > 0 && v <= 0)
+    if (crosses) {
+      const mStar = prevM + (m - prevM) * (prevV / (prevV - v))
+      const distance = Math.abs(mStar - 1)
+      if (distance <= MAX_FLIP_DISTANCE && (best === null || distance < Math.abs(best - 1))) {
+        best = mStar
+      }
+    }
+    prevM = m
+    prevV = v
+  }
+  return best
+}
+
+export function classifyRegime(netGex: number, spot: number, flipStrike: number | null): Regime {
+  if (flipStrike != null && spot > 0 && Math.abs(spot - flipStrike) / spot < NEUTRAL_BAND) {
+    return "neutral"
+  }
+  return netGex >= 0 ? "mean-reversion" : "trending"
 }

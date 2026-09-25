@@ -9,8 +9,14 @@ import {
   computeGamma,
   isGammaSnapshotTrustworthy,
   parseEasternTimestamp,
+  bsGamma,
+  classifyRegime,
+  contractGex,
+  dteWeight,
+  findFlipMultiplier,
+  profileValue,
 } from "./gamma.ts"
-import type { CboeChain } from "./gamma.ts"
+import type { CboeChain, PricedContract } from "./gamma.ts"
 
 const chain = JSON.parse(
   readFileSync(new URL("./fixtures/spx-chain.json", import.meta.url), "utf8")
@@ -269,4 +275,75 @@ test("fetches indices one after another, never overlapping their chains", async 
     "start QQQ",
     "done QQQ",
   ])
+})
+
+const near = (actual: number, expected: number, tol: number, msg?: string) =>
+  assert.ok(Math.abs(actual - expected) <= tol, msg ?? `${actual} not within ${tol} of ${expected}`)
+
+test("Black-Scholes gamma matches the closed form at and away from the money", () => {
+  // phi(d1) / (S sigma sqrt(T)) with d1 = (ln(S/K) + 0.5 sigma^2 T) / (sigma sqrt(T))
+  near(bsGamma(100, 100, 0.25, 0.2), 0.03984439, 1e-7)
+  near(bsGamma(100, 120, 0.25, 0.2), 0.008282, 1e-7)
+})
+
+test("Black-Scholes gamma is zero for expired or unpriced contracts", () => {
+  assert.equal(bsGamma(100, 100, 0, 0.2), 0)
+  assert.equal(bsGamma(100, 100, 0.25, 0), 0)
+})
+
+test("DTE weight excludes 0DTE and tapers to full weight at five days", () => {
+  assert.equal(dteWeight(0), 0)
+  near(dteWeight(1), 0.2, 1e-12)
+  near(dteWeight(2), 0.4, 1e-12)
+  assert.equal(dteWeight(5), 1)
+  assert.equal(dteWeight(45), 1)
+})
+
+function priced(over: Partial<PricedContract>): PricedContract {
+  return {
+    spot: 100,
+    strike: 100,
+    bucket: 100,
+    sign: 1,
+    openInterest: 1000,
+    iv: 0.2,
+    years: 21 / 365,
+    weight: 1,
+    ...over,
+  }
+}
+
+test("contract exposure is signed dollar gamma per 1% move at the shifted level", () => {
+  const c = priced({ sign: -1, openInterest: 500, weight: 0.5 })
+  const level = 1.02 * 100
+  const expected = -1 * 0.5 * 500 * 100 * bsGamma(level, 100, 21 / 365, 0.2) * level * level * 0.01
+  near(contractGex(c, 1.02), expected, 1e-9)
+})
+
+test("profile sums every contract at the same multiplier", () => {
+  const book = [priced({ sign: 1 }), priced({ sign: -1, strike: 95, bucket: 95 })]
+  near(profileValue(book, 1), contractGex(book[0], 1) + contractGex(book[1], 1), 1e-9)
+})
+
+test("flip is the zero crossing nearest spot, interpolated between grid points", () => {
+  // Calls at 105 and puts at 95 with equal size: negative below ~100, positive above.
+  const book = [priced({ sign: 1, strike: 105, bucket: 105 }), priced({ sign: -1, strike: 95, bucket: 95 })]
+  const m = findFlipMultiplier(book)
+  assert.ok(m != null)
+  near(m!, 0.9976, 0.001, "crossing sits just below spot")
+})
+
+test("flip is null when the book never crosses zero within 8% of spot", () => {
+  assert.strictEqual(findFlipMultiplier([priced({ sign: 1 })]), null, "all-call book")
+  assert.strictEqual(findFlipMultiplier([priced({ sign: -1, strike: 90, bucket: 90 })]), null, "all-put book")
+  assert.strictEqual(findFlipMultiplier([]), null, "empty book")
+})
+
+test("regime is neutral within the band around the flip, else the sign of gamma at spot", () => {
+  assert.equal(classifyRegime(1e9, 100, 99.8), "neutral", "0.2% from the flip")
+  assert.equal(classifyRegime(-1e9, 100, 100.2), "neutral", "sign is irrelevant inside the band")
+  assert.equal(classifyRegime(1e9, 100, 97), "mean-reversion")
+  assert.equal(classifyRegime(-1e9, 100, 103), "trending")
+  assert.equal(classifyRegime(1e9, 100, null), "mean-reversion", "no flip: fall back to sign")
+  assert.equal(classifyRegime(-1e9, 100, null), "trending")
 })

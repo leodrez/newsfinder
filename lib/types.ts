@@ -26,6 +26,9 @@ export interface GammaComponent {
   contractsCounted: number
 }
 
+/** Side of the zero-gamma level spot sits on; "neutral" within 0.25% of it. */
+export type Regime = "mean-reversion" | "trending" | "neutral"
+
 export interface GammaSnapshot {
   spot: number
   /** Net dealer gamma in dollars per 1% move. Positive = dealers long gamma. */
