@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
 
-const API_BASE = import.meta.env.VITE_API_URL ?? ""
+export const API_BASE = import.meta.env.VITE_API_URL ?? ""
 
-async function authHeaders(): Promise<HeadersInit> {
+export async function authHeaders(): Promise<HeadersInit> {
   const { data } = await supabase.auth.getSession()
   const token = data.session?.access_token
   return token
@@ -42,7 +42,18 @@ export interface GammaSnapshot {
   lastTradeTs?: number | null
   /** Seconds the quotes lag the tape. Null when either stamp is missing. */
   quoteDelaySec?: number | null
+  /** Where `spot` came from; absent on briefs from before live spot existed. */
+  spotSource?: "cboe" | "ib"
+  /** The Cboe chain's own delayed spot. */
+  chainSpot?: number
+  /** When the live quote was taken (epoch ms). */
+  spotTs?: number | null
+  /** e.g. "SPX index last" or "QQQ mid". */
+  spotLabel?: string
 }
+
+/** Where the gamma panel's spot comes from. */
+export type GammaSourceChoice = "cboe" | "ib"
 
 export interface OvernightQuote {
   symbol: string
@@ -80,6 +91,8 @@ export interface MarketBrief {
       quotes?: Record<string, string>
       gamma?: string
       gammaNq?: string
+      /** Why a requested live IB spot was not applied. */
+      gammaLive?: string
       summary?: string
     }
   }
@@ -117,13 +130,14 @@ export function useBrief() {
     }
   }, [])
 
-  const refetch = useCallback(async () => {
+  const refetch = useCallback(async (gammaSource: GammaSourceChoice = "cboe") => {
     setStatus("loading")
     setError(null)
     try {
       const res = await fetch(`${API_BASE}/api/brief`, {
         method: "POST",
         headers: await authHeaders(),
+        body: JSON.stringify({ gammaSource }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error ?? `Generation failed (HTTP ${res.status})`)

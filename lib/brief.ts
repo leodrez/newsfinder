@@ -3,7 +3,8 @@ import { fetchAllFeeds } from "./rss"
 import { feeds, MAX_FUTURE_SKEW_SEC } from "./config"
 import { briefWindow } from "./window"
 import { fetchQuotes } from "./market-data"
-import { fetchGammaSet } from "./gamma"
+import { getGammaSet } from "./gamma-source"
+import type { GammaSourceChoice } from "./gamma-source"
 import { summarizeOvernight } from "./summarize"
 import type {
   BriefErrors,
@@ -26,14 +27,16 @@ function reasonOf(err: unknown): string {
  * Reads feeds but never writes to `headlines` or `headline_dedup` — see the
  * freshness invariant in lib/config.ts.
  */
-export async function generateBrief(): Promise<MarketBrief> {
+export async function generateBrief(
+  opts: { gammaSource?: GammaSourceChoice } = {}
+): Promise<MarketBrief> {
   const now = Math.floor(Date.now() / 1000)
   const { start, end } = briefWindow(now)
 
   const [newsOutcome, quoteOutcome, gammaOutcome] = await Promise.allSettled([
     fetchAllFeeds(feeds),
     fetchQuotes(now),
-    fetchGammaSet(),
+    getGammaSet(opts.gammaSource ?? "cboe"),
   ])
 
   const errors: BriefErrors = {}
@@ -78,6 +81,7 @@ export async function generateBrief(): Promise<MarketBrief> {
     gammaNq = gammaOutcome.value.nq
     if (gammaOutcome.value.errors.spx) errors.gamma = gammaOutcome.value.errors.spx
     if (gammaOutcome.value.errors.nq) errors.gammaNq = gammaOutcome.value.errors.nq
+    if (gammaOutcome.value.liveError) errors.gammaLive = gammaOutcome.value.liveError
   } else {
     // fetchGammaSet catches per-index failures internally and never rejects
     // today; this branch guards a future change to that contract.

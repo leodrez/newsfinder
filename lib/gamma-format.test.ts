@@ -37,3 +37,10 @@ test("tape line says when there is no zero-gamma level in range", () => {
 test("tape line returns null without a snapshot", () => {
   assert.strictEqual(renderGamma("SPX", null), null)
 })
+
+test("tape line says when spot is a live IB quote rather than the delayed chain", () => {
+  assert.equal(
+    renderGamma("SPX", snap({ spotSource: "ib", spotLabel: "SPX index last", chainSpot: 7681.07, spot: 7682.68 })),
+    "Dealer gamma SPX: neutral; spot 7682.68 (live, SPX index last) is 28 pts (0.37%) below the zero-gamma level at 7711; gamma at spot -5.7bn per 1%"
+  )
+})

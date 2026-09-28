@@ -9,6 +9,8 @@ import type { GammaSnapshot } from "./types"
 export function renderGamma(label: string, gamma: GammaSnapshot | null): string | null {
   if (!gamma) return null
   const flip = gamma.flipStrike
+  // The chain is ~15 min behind the tape; say so when spot is not.
+  const live = gamma.spotSource === "ib" ? ` (live, ${gamma.spotLabel ?? "IB"})` : ""
   const position =
     flip == null
       ? "has no zero-gamma level within 8%"
@@ -16,7 +18,7 @@ export function renderGamma(label: string, gamma: GammaSnapshot | null): string 
         `(${(Math.abs(gamma.spot / flip - 1) * 100).toFixed(2)}%) ` +
         `${gamma.spot >= flip ? "above" : "below"} the zero-gamma level at ${flip}`
   return (
-    `Dealer gamma ${label}: ${gamma.regime}; spot ${gamma.spot} ${position}; ` +
+    `Dealer gamma ${label}: ${gamma.regime}; spot ${gamma.spot}${live} ${position}; ` +
     `gamma at spot ${(gamma.netGex / 1e9).toFixed(1)}bn per 1%`
   )
 }

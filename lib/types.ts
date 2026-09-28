@@ -29,6 +29,9 @@ export interface GammaComponent {
 /** Side of the zero-gamma level spot sits on; "neutral" within 0.25% of it. */
 export type Regime = "mean-reversion" | "trending" | "neutral"
 
+/** Where a gamma snapshot's spot came from: the delayed Cboe chain, or a live IB quote. */
+export type SpotSource = "cboe" | "ib"
+
 export interface GammaSnapshot {
   spot: number
   /**
@@ -53,6 +56,14 @@ export interface GammaSnapshot {
   lastTradeTs: number | null
   /** Seconds the quotes lag the tape. Null when either stamp is missing. */
   quoteDelaySec: number | null
+  /** Where `spot` came from. Absent on briefs from before live spot existed. */
+  spotSource?: SpotSource
+  /** The base chain's own delayed spot; equals `spot` when spotSource is "cboe". */
+  chainSpot?: number
+  /** When the live quote was taken (epoch ms); null for a Cboe spot. */
+  spotTs?: number | null
+  /** What the live price is, e.g. "SPX index last" or "QQQ mid". */
+  spotLabel?: string
 }
 
 export type QuoteGroup = "futures" | "rates" | "global" | "commods" | "vol"
@@ -90,6 +101,8 @@ export interface BriefErrors {
   quotes?: Record<string, string>
   gamma?: string
   gammaNq?: string
+  /** Why the live IB spot could not be used, when it was asked for. */
+  gammaLive?: string
   summary?: string
 }
 

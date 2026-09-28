@@ -172,8 +172,11 @@ function priceChain(
 }
 
 interface ChainTally {
-  component: GammaComponent
+  symbol: string
+  spot: number
+  strikeRatio: number
   contracts: PricedContract[]
+  contractsCounted: number
   quoteTs: number | null
   lastTradeTs: number | null
 }
@@ -181,40 +184,48 @@ interface ChainTally {
 function tallyChain(chain: CboeChain, now: Date, strikeRatio: number, strikeBucket: number): ChainTally {
   const contracts = priceChain(chain, now, strikeRatio, strikeBucket)
   return {
-    component: {
-      symbol: chain.data.symbol ?? "unknown",
-      strikeRatio,
-      netGex: profileValue(contracts, 1),
-      contractsCounted: contracts.reduce((total, c) => total + c.openInterest, 0),
-    },
+    symbol: chain.data.symbol ?? "unknown",
+    spot: chain.data.current_price,
+    strikeRatio,
     contracts,
+    contractsCounted: contracts.reduce((total, c) => total + c.openInterest, 0),
     quoteTs: parseChainStamp(chain.timestamp),
     lastTradeTs: parseEasternTimestamp(chain.data.last_trade_time),
   }
 }
 
 /**
- * Merges several option chains on the same underlying into one dealer-gamma
- * reading. `chains[0]` is the base: the snapshot's spot, and the strike axis
- * every other chain is scaled onto.
- *
- * Exposure is the weighted book re-priced with Black-Scholes. The same
- * evaluation gives gamma at spot (`netGex`), the per-strike split
- * (`topStrikes`) and, swept across a range of hypothetical spot levels, the
- * zero-gamma level (`flipStrike`), so the three can never disagree.
- *
- * Staleness is reported conservatively — the oldest build, the stalest tape
- * stamp, and the worst per-chain delay — so the merged reading is never
- * presented as fresher than its least fresh input.
+ * One index's priced option book: every chain's contracts on the base chain's
+ * strike axis, plus the stamps needed to report staleness. Building it is the
+ * expensive part (the Cboe download); evaluating it at a spot is cheap, which
+ * is what lets a live quote re-read the same book every minute.
  */
-export function computeCombinedGamma(
-  chains: CboeChain[],
-  now: Date,
-  options: { strikeBucket?: number } = {}
-): GammaSnapshot {
-  const strikeBucket = options.strikeBucket ?? 0
-  const baseSpot = chains[0]?.data.current_price ?? 0
+export interface GammaBook {
+  baseSpot: number
+  contracts: PricedContract[]
+  tallies: ChainTally[]
+}
 
+/**
+ * A live quote for one of the book's chains. `chainSymbol` names which chain
+ * it prices (Cboe's own symbol, e.g. "^SPX" or "QQQ"); the move it implies
+ * relative to that chain's delayed spot is applied to the whole book.
+ */
+export interface LiveSpot {
+  chainSymbol: string
+  price: number
+  /** Epoch ms the quote was taken. */
+  ts: number
+  label: string
+}
+
+/**
+ * Prices several option chains on the same underlying into one book.
+ * `chains[0]` is the base: its spot and strike axis are what the snapshot
+ * reports, and every other chain is scaled onto that axis.
+ */
+export function buildBook(chains: CboeChain[], now: Date, strikeBucket = 0): GammaBook {
+  const baseSpot = chains[0]?.data.current_price ?? 0
   const tallies = chains.map((chain) => {
     const spot = chain.data.current_price
     // A chain with no usable spot cannot be placed on the base axis; it still
@@ -222,16 +233,47 @@ export function computeCombinedGamma(
     const ratio = spot && baseSpot ? baseSpot / spot : 1
     return tallyChain(chain, now, ratio, strikeBucket)
   })
-  const contracts = tallies.flatMap((t) => t.contracts)
+  return { baseSpot, contracts: tallies.flatMap((t) => t.contracts), tallies }
+}
+
+/**
+ * The spot multiplier a live quote implies, or null when the quote names a
+ * chain the book does not hold or implies a move beyond the profile's range —
+ * a quote that far off is a bad print, not a market move.
+ */
+function liveMultiplier(book: GammaBook, live: LiveSpot | null | undefined): number | null {
+  if (!live || !(live.price > 0)) return null
+  const tally = book.tallies.find((t) => t.symbol === live.chainSymbol)
+  if (!tally || !(tally.spot > 0)) return null
+  const m = live.price / tally.spot
+  return Math.abs(m - 1) <= PROFILE_HALF_WIDTH - MAX_FLIP_DISTANCE ? m : null
+}
+
+/**
+ * Reads the book at one spot level: the chain's own spot, or the level a live
+ * quote implies. The same evaluation gives gamma at spot (`netGex`), the
+ * per-strike split (`topStrikes`) and the zero-gamma level nearest spot, so
+ * the three can never disagree.
+ *
+ * Staleness is reported conservatively — the oldest build, the stalest tape
+ * stamp, and the worst per-chain delay — so the merged reading is never
+ * presented as fresher than its least fresh input.
+ */
+export function evaluateBook(book: GammaBook, live?: LiveSpot | null): GammaSnapshot {
+  const liveM = liveMultiplier(book, live)
+  const m = liveM ?? 1
+  // A live quote on an overlay chain lands on the base axis by ratio; cents are
+  // the finest a reader needs, and float noise would print as 7682.679999999999.
+  const spot = liveM == null ? book.baseSpot : Math.round(book.baseSpot * m * 100) / 100
 
   const byStrike = new Map<number, number>()
-  for (const c of contracts) byStrike.set(c.bucket, (byStrike.get(c.bucket) ?? 0) + contractGex(c, 1))
+  for (const c of book.contracts) byStrike.set(c.bucket, (byStrike.get(c.bucket) ?? 0) + contractGex(c, m))
   const strikes: GammaStrike[] = [...byStrike.entries()].map(([strike, gex]) => ({ strike, gex }))
   const topStrikes = [...strikes].sort((a, b) => Math.abs(b.gex) - Math.abs(a.gex)).slice(0, 5)
 
-  const netGex = profileValue(contracts, 1)
-  const flipMultiplier = findFlipMultiplier(contracts)
-  const flipStrike = flipMultiplier == null ? null : Math.round(flipMultiplier * baseSpot * 100) / 100
+  const netGex = profileValue(book.contracts, m)
+  const flipMultiplier = findFlipMultiplier(book.contracts, m)
+  const flipStrike = flipMultiplier == null ? null : Math.round(flipMultiplier * book.baseSpot * 100) / 100
 
   // Cboe's own two stamps are what let the UI state the delay as a measurement
   // rather than repeating a documented figure that could quietly stop being true.
@@ -239,25 +281,45 @@ export function computeCombinedGamma(
     const present = values.filter((v): v is number => v != null)
     return present.length ? Math.min(...present) : null
   }
-  const quoteTs = oldest(tallies.map((t) => t.quoteTs))
-  const lastTradeTs = oldest(tallies.map((t) => t.lastTradeTs))
-  const delays = tallies
+  const quoteTs = oldest(book.tallies.map((t) => t.quoteTs))
+  const lastTradeTs = oldest(book.tallies.map((t) => t.lastTradeTs))
+  const delays = book.tallies
     .filter((t) => t.quoteTs != null && t.lastTradeTs != null)
     .map((t) => Math.round((t.quoteTs! - t.lastTradeTs!) / 1000))
 
+  const components: GammaComponent[] = book.tallies.map((t) => ({
+    symbol: t.symbol,
+    strikeRatio: t.strikeRatio,
+    netGex: profileValue(t.contracts, m),
+    contractsCounted: t.contractsCounted,
+  }))
+
   return {
-    spot: baseSpot,
+    spot,
     netGex,
     flipStrike,
     topStrikes,
-    regime: classifyRegime(netGex, baseSpot, flipStrike),
-    contractsCounted: tallies.reduce((total, t) => total + t.component.contractsCounted, 0),
+    regime: classifyRegime(netGex, spot, flipStrike),
+    contractsCounted: book.tallies.reduce((total, t) => total + t.contractsCounted, 0),
     strikesCounted: strikes.length,
-    components: tallies.map((t) => t.component),
+    components,
     quoteTs,
     lastTradeTs,
     quoteDelaySec: delays.length ? Math.max(...delays) : null,
+    spotSource: liveM == null ? "cboe" : "ib",
+    chainSpot: book.baseSpot,
+    spotTs: liveM == null ? null : live!.ts,
+    ...(liveM == null ? {} : { spotLabel: live!.label }),
   }
+}
+
+/** Merges chains and reads them at the chain's own spot, or at `liveSpot` when given. */
+export function computeCombinedGamma(
+  chains: CboeChain[],
+  now: Date,
+  options: { strikeBucket?: number; liveSpot?: LiveSpot | null } = {}
+): GammaSnapshot {
+  return evaluateBook(buildBook(chains, now, options.strikeBucket ?? 0), options.liveSpot)
 }
 
 /** A midnight build read at 09:30 ET is ~9h old; yesterday's build read today is ~33h. */
@@ -368,6 +430,25 @@ async function fetchChain(
   return chain
 }
 
+/** Fetches an index's chains one at a time and prices them into a book. */
+async function fetchIndexBook(index: GammaIndex, now: Date, fetchImpl: FetchImpl): Promise<GammaBook> {
+  const chains: CboeChain[] = []
+  for (const symbol of index.symbols) {
+    chains.push(await fetchChain(symbol, index.label, fetchImpl))
+  }
+  // Raw payloads (SPX alone is ~12.8MB) go out of scope here; only the priced
+  // contracts are kept.
+  return buildBook(chains, now, index.strikeBucket)
+}
+
+/** Reads a book at its own or a live spot and applies the trust checks. */
+function evaluateIndex(index: GammaIndex, book: GammaBook, now: Date, live?: LiveSpot | null): GammaSnapshot {
+  const snapshot = evaluateBook(book, live)
+  const trustError = isGammaSnapshotTrustworthy(snapshot, index.label, now)
+  if (trustError) throw new Error(trustError)
+  return snapshot
+}
+
 /**
  * Fetches an index's chains (SPX alone is ~12.8MB), aggregates them, and
  * discards the raw payloads. Chains are fetched one at a time: two of these
@@ -381,19 +462,13 @@ async function fetchChain(
 export async function fetchIndexGamma(
   index: GammaIndex,
   now: Date = new Date(),
-  fetchImpl: FetchImpl = fetch
+  fetchImpl: FetchImpl = fetch,
+  live?: LiveSpot | null
 ): Promise<GammaSnapshot> {
-  const chains: CboeChain[] = []
-  for (const symbol of index.symbols) {
-    chains.push(await fetchChain(symbol, index.label, fetchImpl))
-  }
-
-  const snapshot = computeCombinedGamma(chains, now, { strikeBucket: index.strikeBucket })
-  const trustError = isGammaSnapshotTrustworthy(snapshot, index.label, now)
-  if (trustError) throw new Error(trustError)
-
-  return snapshot
+  return evaluateIndex(index, await fetchIndexBook(index, now, fetchImpl), now, live)
 }
+
+export type GammaKey = GammaIndex["key"]
 
 export interface GammaSet {
   spx: GammaSnapshot | null
@@ -401,29 +476,61 @@ export interface GammaSet {
   errors: { spx?: string; nq?: string }
 }
 
+export interface GammaBooks {
+  spx: GammaBook | null
+  nq: GammaBook | null
+  errors: { spx?: string; nq?: string }
+}
+
 /**
- * Gathers every index's gamma reading. Indices run one after another for the
- * same reason their chains do — only one chain is ever in flight, so peak heap
- * stays at roughly what the SPX chain alone already costs.
+ * Fetches and prices every index's book. Indices run one after another for
+ * the same reason their chains do — only one chain is ever in flight, so peak
+ * heap stays at roughly what the SPX chain alone already costs.
  *
  * Each index degrades on its own: one unreachable chain leaves that panel with
  * a reason and the other intact.
  */
-export async function fetchGammaSet(
+export async function fetchGammaBooks(
   now: Date = new Date(),
   fetchImpl: FetchImpl = fetch
-): Promise<GammaSet> {
-  const set: GammaSet = { spx: null, nq: null, errors: {} }
-
+): Promise<GammaBooks> {
+  const books: GammaBooks = { spx: null, nq: null, errors: {} }
   for (const index of Object.values(GAMMA_INDICES)) {
     try {
-      set[index.key] = await fetchIndexGamma(index, now, fetchImpl)
+      books[index.key] = await fetchIndexBook(index, now, fetchImpl)
+    } catch (err) {
+      books.errors[index.key] = err instanceof Error ? err.message : String(err)
+    }
+  }
+  return books
+}
+
+/** Reads every fetched book, at a live spot where one is given for that index. */
+export function evaluateGammaBooks(
+  books: GammaBooks,
+  now: Date = new Date(),
+  live: Partial<Record<GammaKey, LiveSpot>> = {}
+): GammaSet {
+  const set: GammaSet = { spx: null, nq: null, errors: { ...books.errors } }
+  for (const index of Object.values(GAMMA_INDICES)) {
+    const book = books[index.key]
+    if (!book) continue
+    try {
+      set[index.key] = evaluateIndex(index, book, now, live[index.key])
     } catch (err) {
       set.errors[index.key] = err instanceof Error ? err.message : String(err)
     }
   }
-
   return set
+}
+
+/** Gathers every index's gamma reading; see fetchGammaBooks and evaluateGammaBooks. */
+export async function fetchGammaSet(
+  now: Date = new Date(),
+  fetchImpl: FetchImpl = fetch,
+  live: Partial<Record<GammaKey, LiveSpot>> = {}
+): Promise<GammaSet> {
+  return evaluateGammaBooks(await fetchGammaBooks(now, fetchImpl), now, live)
 }
 
 // ── Option math ──────────────────────────────────────────────────────────────
@@ -496,8 +603,11 @@ export function profileValue(contracts: PricedContract[], multiplier: number): n
  * when none lies within MAX_FLIP_DISTANCE. Falling crossings are ignored — the
  * SpotGamma/perfiliev convention — so "above the flip" always means the long
  * gamma side and the regime can be read from spot's position alone.
+ *
+ * `center` is the multiplier being read — 1 for the chain's own spot, or the
+ * level a live quote implies — so "nearest" means nearest the spot shown.
  */
-export function findFlipMultiplier(contracts: PricedContract[]): number | null {
+export function findFlipMultiplier(contracts: PricedContract[], center = 1): number | null {
   if (!contracts.length) return null
   const steps = Math.round((2 * PROFILE_HALF_WIDTH) / PROFILE_STEP)
   let best: number | null = null
@@ -510,8 +620,8 @@ export function findFlipMultiplier(contracts: PricedContract[]): number | null {
     const crosses = prevV < 0 && v >= 0
     if (crosses) {
       const mStar = prevM + (m - prevM) * (prevV / (prevV - v))
-      const distance = Math.abs(mStar - 1)
-      if (distance <= MAX_FLIP_DISTANCE && (best === null || distance < Math.abs(best - 1))) {
+      const distance = Math.abs(mStar - center)
+      if (distance <= MAX_FLIP_DISTANCE && (best === null || distance < Math.abs(best - center))) {
         best = mStar
       }
     }

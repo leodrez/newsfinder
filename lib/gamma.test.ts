@@ -16,8 +16,11 @@ import {
   dteWeight,
   findFlipMultiplier,
   profileValue,
+  buildBook,
+  evaluateBook,
+  evaluateGammaBooks,
 } from "./gamma.ts"
-import type { CboeChain, PricedContract } from "./gamma.ts"
+import type { CboeChain, LiveSpot, PricedContract } from "./gamma.ts"
 
 const chain = JSON.parse(
   readFileSync(new URL("./fixtures/spx-chain.json", import.meta.url), "utf8")
@@ -453,4 +456,100 @@ test("a falling crossing is never the flip, so the regime always matches spot's 
 test("regime follows spot's side of the flip even when gamma at spot has the other sign", () => {
   assert.equal(classifyRegime(-1e9, 100, 97), "mean-reversion", "above the flip is long gamma")
   assert.equal(classifyRegime(1e9, 100, 103), "trending", "below the flip is short gamma")
+})
+
+// ── Live spot (IB) ───────────────────────────────────────────────────────────
+
+const symmetric = (spot: number): CboeChain => ({
+  timestamp: "2026-08-28 14:30:00",
+  data: {
+    symbol: "^SPX",
+    current_price: spot,
+    options: [
+      { option: "SPX260918C00105000", open_interest: 1000, iv: 0.2 },
+      { option: "SPX260918P00095000", open_interest: 1000, iv: 0.2 },
+    ],
+  },
+})
+const LIVE_TS = Date.parse("2026-08-28T14:44:00Z")
+
+test("without a live quote the snapshot says its spot came from the Cboe chain", () => {
+  const g = computeGamma(symmetric(100), NOW)
+  assert.equal(g.spotSource, "cboe")
+  assert.equal(g.chainSpot, 100)
+  assert.strictEqual(g.spotTs, null)
+})
+
+test("a live base-chain quote re-reads the same book at the live price", () => {
+  const live: LiveSpot = { chainSymbol: "^SPX", price: 103, ts: LIVE_TS, label: "SPX index last" }
+  const g = evaluateBook(buildBook([symmetric(100)], NOW, 0), live)
+  const reference = computeGamma(symmetric(103), NOW)
+
+  assert.equal(g.spot, 103)
+  assert.equal(g.chainSpot, 100, "the chain's own delayed spot is kept for display")
+  assert.equal(g.spotSource, "ib")
+  assert.equal(g.spotTs, LIVE_TS)
+  assert.equal(g.spotLabel, "SPX index last")
+  near(g.netGex, reference.netGex, 1e-3, "same book evaluated at the live level")
+  assert.equal(g.regime, "mean-reversion", "at 100 it is neutral; live 103 is clear of the flip")
+  near(g.flipStrike!, computeGamma(symmetric(100), NOW).flipStrike!, 0.01, "the level itself does not move")
+})
+
+test("a live overlay-chain quote moves the merged snapshot on the base axis", () => {
+  const live: LiveSpot = { chainSymbol: "QQQ", price: 757.5, ts: LIVE_TS, label: "QQQ mid" }
+  const g = evaluateBook(buildBook([ndxChain, qqqChain], NOW, 25), live)
+  near(g.spot, 30300, 1e-6, "QQQ up 1% puts the NDX-axis spot up 1%")
+  assert.equal(g.chainSpot, 30000)
+  assert.equal(g.spotSource, "ib")
+})
+
+test("a live quote for a chain not in the book, or an implausible one, is ignored", () => {
+  const book = buildBook([symmetric(100)], NOW, 0)
+  const wrongChain = evaluateBook(book, { chainSymbol: "QQQ", price: 750, ts: LIVE_TS, label: "QQQ mid" })
+  assert.equal(wrongChain.spotSource, "cboe")
+  assert.equal(wrongChain.spot, 100)
+  const absurd = evaluateBook(book, { chainSymbol: "^SPX", price: 140, ts: LIVE_TS, label: "SPX index last" })
+  assert.equal(absurd.spotSource, "cboe", "a 40% gap is a bad quote, not a market move")
+})
+
+test("the flip nearest the live spot is chosen when the book has several", () => {
+  // Alternating walls give rising crossings on both sides of 100.
+  const book = buildBook(
+    [
+      {
+        data: {
+          symbol: "^SPX",
+          current_price: 100,
+          options: [
+            { option: "SPX260918P00090000", open_interest: 1000, iv: 0.15 },
+            { option: "SPX260918C00096000", open_interest: 1000, iv: 0.15 },
+            { option: "SPX260918P00104000", open_interest: 1000, iv: 0.15 },
+            { option: "SPX260918C00110000", open_interest: 1000, iv: 0.15 },
+          ],
+        },
+      },
+    ],
+    NOW,
+    0
+  )
+  const low = findFlipMultiplier(book.contracts, 0.96)
+  const high = findFlipMultiplier(book.contracts, 1.06)
+  assert.ok(low != null && high != null)
+  assert.ok(low! < 1 && high! > 1, `low ${low} high ${high}`)
+})
+
+test("evaluating fetched books applies each index's live quote and trust checks", () => {
+  const books = {
+    spx: buildBook([symmetric(100)], NOW, 0),
+    nq: buildBook([ndxChain, qqqChain], NOW, 25),
+    errors: {},
+  }
+  const set = evaluateGammaBooks(books, NOW, {
+    spx: { chainSymbol: "^SPX", price: 103, ts: LIVE_TS, label: "SPX index last" },
+  })
+  assert.equal(set.spx?.spotSource, "ib")
+  assert.equal(set.nq?.spotSource, "cboe")
+  const later = evaluateGammaBooks(books, new Date("2026-08-30T00:00:00Z"))
+  assert.match(later.errors.spx ?? "", /stale/)
+  assert.strictEqual(later.spx, null)
 })

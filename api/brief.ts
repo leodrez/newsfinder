@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node"
 import { getAuthUser } from "../lib/auth"
 import { generateBrief, getLatestBrief } from "../lib/brief"
+import { parseGammaSource } from "../lib/gamma-source"
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "OPTIONS") return res.status(200).end()
@@ -15,7 +16,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method === "POST") {
     try {
-      const brief = await generateBrief()
+      const body = typeof req.body === "string" ? safeJson(req.body) : req.body
+      const brief = await generateBrief({ gammaSource: parseGammaSource(body?.gammaSource) })
       return res.status(200).json({ brief })
     } catch (err) {
       // Only total news failure reaches here; partial failures ride in payload.errors.
@@ -26,4 +28,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   return res.status(405).json({ error: "Method not allowed" })
+}
+
+function safeJson(text: string): Record<string, unknown> | null {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
 }

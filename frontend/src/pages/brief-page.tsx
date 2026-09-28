@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { RefreshCw, Square, Volume2 } from "lucide-react"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { useGammaSource } from "@/hooks/use-gamma-source"
 import { Button } from "@/components/ui/button"
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -37,6 +39,7 @@ function formatAge(ageSec: number): string {
 
 export function BriefPage() {
   const { brief, status, error, refetch } = useBrief()
+  const gammaSource = useGammaSource()
   // Ticking clock so the relative age stays truthful without an impure Date.now()
   // call during render. Minute resolution is plenty for an hours-scale staleness cue.
   const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000))
@@ -78,7 +81,7 @@ export function BriefPage() {
               "No brief generated yet"
             )}
           </div>
-          <Button size="sm" className="h-7 gap-1.5 text-xs" onClick={refetch} disabled={loading}>
+          <Button size="sm" className="h-7 gap-1.5 text-xs" onClick={() => refetch(gammaSource.source)} disabled={loading}>
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
             {loading ? "Fetching…" : "Fetch"}
           </Button>
@@ -190,37 +193,120 @@ export function BriefPage() {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Dealer Gamma Regime</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-5">
-                <GammaPanel
-                  label="S&P 500 (SPX)"
-                  gamma={brief.payload.gamma}
-                  error={brief.payload.errors.gamma}
-                  sentiment={brief.sentiment}
-                  sentimentLabel={brief.payload.sentimentLabel}
-                  sentimentError={brief.payload.errors.summary}
-                />
-                <div className="border-t pt-4">
-                  <GammaPanel
-                    label="Nasdaq 100 (NDX + QQQ) — NQ"
-                    gamma={brief.payload.gammaNq}
-                    error={
-                      brief.payload.errors.gammaNq ??
-                      "This brief predates the Nasdaq gamma panel."
-                    }
-                    sentiment={brief.sentiment}
-                    sentimentLabel={brief.payload.sentimentLabel}
-                    sentimentError={brief.payload.errors.summary}
-                  />
-                </div>
-              </CardContent>
-            </Card>
+            <GammaCard brief={brief} gammaSource={gammaSource} />
           </>
         )}
       </div>
     </div>
+  )
+}
+
+const ET_SECONDS = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  hourCycle: "h23",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+})
+
+/**
+ * The gamma card with its spot-source control. On "Cboe" it shows the
+ * brief's stored reading; on "IB" it shows a live reading of the same Cboe
+ * book at the Gateway's current price, refreshed every minute.
+ */
+function GammaCard({
+  brief,
+  gammaSource,
+}: {
+  brief: NonNullable<ReturnType<typeof useBrief>["brief"]>
+  gammaSource: ReturnType<typeof useGammaSource>
+}) {
+  const { source, setSource, ib, live, liveLoading, liveError, refreshLive, preferred } = gammaSource
+  const useLive = source === "ib" && live != null
+  const gamma = useLive ? live.gamma : brief.payload.gamma
+  const gammaNq = useLive ? live.gammaNq : brief.payload.gammaNq
+  const errors = useLive ? live.errors : brief.payload.errors
+  const ibDisabledReason =
+    ib.status === "checking" ? "Checking for a local IB Gateway…" : ib.status === "unavailable" ? ib.reason : undefined
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm">Dealer Gamma Regime</CardTitle>
+        <CardAction>
+          <ToggleGroup
+            type="single"
+            size="sm"
+            variant="outline"
+            value={source}
+            onValueChange={(v) => {
+              if (v === "cboe" || v === "ib") setSource(v)
+            }}
+            aria-label="Spot source for the gamma regime"
+          >
+            <ToggleGroupItem value="cboe" className="h-7 px-2.5 text-xs" title="Spot from the Cboe chain, about 15 minutes behind the tape">
+              Cboe · delayed
+            </ToggleGroupItem>
+            <ToggleGroupItem
+              value="ib"
+              className="h-7 px-2.5 text-xs"
+              disabled={ib.status !== "available"}
+              title={ibDisabledReason ?? "Live spot from your local IB Gateway"}
+            >
+              IB · live
+            </ToggleGroupItem>
+          </ToggleGroup>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {preferred === "ib" && ib.status === "unavailable" && (
+          <div className="text-[11px] text-muted-foreground">
+            IB live unavailable: {ib.reason}. Showing the brief's Cboe reading.
+          </div>
+        )}
+        {source === "ib" && (
+          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+            <span>
+              {live
+                ? `Live spot from IB · updated ${ET_SECONDS.format(new Date(live.fetchedAt))} ET · refreshes every minute`
+                : "Fetching live spot from IB…"}
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-1.5"
+              onClick={refreshLive}
+              disabled={liveLoading}
+              aria-label="Refresh live gamma"
+            >
+              <RefreshCw className={`h-3 w-3 ${liveLoading ? "animate-spin" : ""}`} />
+            </Button>
+          </div>
+        )}
+        {source === "ib" && (liveError || live?.errors.gammaLive) && (
+          <div className="rounded border border-amber-500/40 bg-amber-500/5 p-2 text-[11px] text-muted-foreground">
+            {liveError ?? live?.errors.gammaLive}
+          </div>
+        )}
+        <GammaPanel
+          label="S&P 500 (SPX)"
+          gamma={gamma}
+          error={errors.gamma}
+          sentiment={brief.sentiment}
+          sentimentLabel={brief.payload.sentimentLabel}
+          sentimentError={brief.payload.errors.summary}
+        />
+        <div className="border-t pt-4">
+          <GammaPanel
+            label="Nasdaq 100 (NDX + QQQ) — NQ"
+            gamma={gammaNq}
+            error={errors.gammaNq ?? "This brief predates the Nasdaq gamma panel."}
+            sentiment={brief.sentiment}
+            sentimentLabel={brief.payload.sentimentLabel}
+            sentimentError={brief.payload.errors.summary}
+          />
+        </div>
+      </CardContent>
+    </Card>
   )
 }

@@ -33,6 +33,14 @@ const ET_TIME = new Intl.DateTimeFormat("en-US", {
   minute: "2-digit",
 })
 
+const ET_SECONDS = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  hourCycle: "h23",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+})
+
 function formatEt(ms: number | null | undefined): string | null {
   return ms == null ? null : `${ET_TIME.format(new Date(ms))} ET`
 }
@@ -110,6 +118,14 @@ export function GammaPanel({
   const overlays = components.slice(1)
 
   const delay = formatDelay(gamma.quoteDelaySec)
+  // A live IB spot re-reads the Cboe book at the current price; the chain's own
+  // spot is kept so the reader can see how far the tape has moved since.
+  const isLiveSpot = gamma.spotSource === "ib"
+  const liveAt = isLiveSpot && gamma.spotTs != null ? `${ET_SECONDS.format(new Date(gamma.spotTs))} ET` : null
+  const chainSpotNote =
+    gamma.chainSpot != null
+      ? `Cboe chain spot ${gamma.chainSpot.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+      : undefined
   const capturedAt = formatEt(gamma.quoteTs)
   const tapeThrough = formatEt(gamma.lastTradeTs)
 
@@ -133,6 +149,11 @@ export function GammaPanel({
           <div className="tabular-nums">
             {gamma.spot.toLocaleString(undefined, { maximumFractionDigits: 2 })}
           </div>
+          {isLiveSpot && (
+            <div className="text-[10px] text-emerald-600 dark:text-emerald-400" title={chainSpotNote}>
+              live · {gamma.spotLabel ?? "IB"}
+            </div>
+          )}
         </div>
         <div>
           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Zero-gamma level</div>
@@ -191,8 +212,17 @@ export function GammaPanel({
       {/* Three different staleness clocks run here and they are not the same
           number, so each is stated rather than collapsed into "delayed". */}
       <div className="space-y-0.5 text-[10px] text-muted-foreground">
+        {isLiveSpot && (
+          <div>
+            <span className="font-medium text-foreground/70">
+              Spot live from IB ({gamma.spotLabel ?? "IB"}){liveAt ? ` at ${liveAt}` : ""}
+            </span>
+            {chainSpotNote ? ` vs ${chainSpotNote}` : ""}. The zero-gamma level and open interest
+            still come from the Cboe chain below.
+          </div>
+        )}
         <div>
-          Quotes{" "}
+          {isLiveSpot ? "Chain quotes" : "Quotes"}{" "}
           {delay ? (
             <span className="font-medium text-foreground/70">{delay} behind the tape</span>
           ) : (
