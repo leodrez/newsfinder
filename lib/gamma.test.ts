@@ -553,3 +553,12 @@ test("evaluating fetched books applies each index's live quote and trust checks"
   assert.match(later.errors.spx ?? "", /stale/)
   assert.strictEqual(later.spx, null)
 })
+
+test("a live move ratio re-reads the book without needing a price in chain units", () => {
+  // Pre-market the SPX index is not live; the ES move since settlement is.
+  const live: LiveSpot = { chainSymbol: "^SPX", price: 0, ratio: 1.03, ts: LIVE_TS, label: "ES move since settle" }
+  const g = evaluateBook(buildBook([symmetric(100)], NOW, 0), live)
+  assert.equal(g.spot, 103)
+  assert.equal(g.spotSource, "ib")
+  assert.equal(g.spotLabel, "ES move since settle")
+})

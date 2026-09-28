@@ -4,8 +4,10 @@ import { createServer } from "node:net"
 import {
   IB_LIVE_INSTRUMENTS,
   fetchIbLiveSpots,
+  frontQuarterlyMonth,
   ibConfigFromEnv,
   isDeployedRuntime,
+  isRegularSession,
   pickLivePrice,
   probeIb,
 } from "./ib-quotes.ts"
@@ -99,14 +101,18 @@ function fakeIb(script: Script, log: string[] = []): IbModule {
 
 const CFG = { host: "127.0.0.1", port: 4001, clientId: 917, timeoutMs: 200 }
 const LOCAL = {}
+/** Mon 28 Sep 2026 10:50 ET, inside the regular session. */
+const RTH = Date.parse("2026-09-28T14:50:00Z")
+/** Mon 28 Sep 2026 09:10 ET, pre-market. */
+const PRE = Date.parse("2026-09-28T13:10:00Z")
 
 test("reads SPX from its last trade and QQQ from its midpoint, then disconnects", async () => {
   const log: string[] = []
   const ib = fakeIb({ replies: { SPX: [[1, 0], [4, 7678.62]], QQQ: [[1, 734.62], [2, 734.64]] } }, log)
-  const { spots, errors } = await fetchIbLiveSpots(CFG, { load: async () => ib, env: LOCAL, now: () => 1000 })
+  const { spots, errors } = await fetchIbLiveSpots(CFG, { load: async () => ib, env: LOCAL, now: () => RTH })
   assert.deepEqual(errors, {})
-  assert.deepEqual(spots.spx, { chainSymbol: "^SPX", price: 7678.62, ts: 1000, label: "SPX index last" })
-  assert.deepEqual(spots.nq, { chainSymbol: "QQQ", price: 734.63, ts: 1000, label: "QQQ mid" })
+  assert.deepEqual(spots.spx, { chainSymbol: "^SPX", price: 7678.62, ts: RTH, label: "SPX index last" })
+  assert.deepEqual(spots.nq, { chainSymbol: "QQQ", price: 734.63, ts: RTH, label: "QQQ mid" })
   assert.ok(log.includes("type 1"), "asks for real-time, never delayed, data")
   assert.ok(log.includes("cancel 1") && log.includes("cancel 2") && log.at(-1) === "disconnect")
 })
@@ -118,7 +124,7 @@ test("a missing subscription fails only that instrument", async () => {
       QQQ: [{ code: 10168, message: "Requested market data is not subscribed." }],
     },
   })
-  const { spots, errors } = await fetchIbLiveSpots(CFG, { load: async () => ib, env: LOCAL })
+  const { spots, errors } = await fetchIbLiveSpots(CFG, { load: async () => ib, env: LOCAL, now: () => RTH })
   assert.ok(spots.spx)
   assert.strictEqual(spots.nq, undefined)
   assert.match(errors.nq ?? "", /QQQ.*not subscribed.*10168/)
@@ -126,14 +132,14 @@ test("a missing subscription fails only that instrument", async () => {
 
 test("an instrument with no price before the timeout is reported, not guessed", async () => {
   const ib = fakeIb({ replies: { SPX: [[4, 7678.62]], QQQ: [[1, 0]] } })
-  const { spots, errors } = await fetchIbLiveSpots(CFG, { load: async () => ib, env: LOCAL })
+  const { spots, errors } = await fetchIbLiveSpots(CFG, { load: async () => ib, env: LOCAL, now: () => RTH })
   assert.ok(spots.spx)
   assert.match(errors.nq ?? "", /no live QQQ price within 0\.2s/)
 })
 
 test("a refused connection fails every instrument with the Gateway address", async () => {
   const ib = fakeIb({ onConnect: { code: 502, message: "Couldn't connect to TWS." } })
-  const { spots, errors } = await fetchIbLiveSpots(CFG, { load: async () => ib, env: LOCAL })
+  const { spots, errors } = await fetchIbLiveSpots(CFG, { load: async () => ib, env: LOCAL, now: () => RTH })
   assert.deepEqual(spots, {})
   assert.match(errors.spx ?? "", /127\.0\.0\.1:4001.*Couldn't connect/)
   assert.equal(errors.nq, errors.spx)
@@ -167,4 +173,46 @@ test("probe distinguishes a listening Gateway from a closed port", async () => {
   const closed = await probeIb({ ...CFG, port }, LOCAL)
   assert.equal(closed.available, false)
   assert.match(closed.reason ?? "", new RegExp(`No IB Gateway at 127\\.0\\.0\\.1:${port}`))
+})
+
+test("the regular session is 09:30-16:00 ET on weekdays", () => {
+  assert.equal(isRegularSession(RTH), true)
+  assert.equal(isRegularSession(PRE), false)
+  assert.equal(isRegularSession(Date.parse("2026-09-28T20:00:00Z")), false, "16:00 ET is the close")
+  assert.equal(isRegularSession(Date.parse("2026-09-26T15:00:00Z")), false, "Saturday")
+  assert.equal(isRegularSession(Date.parse("2026-01-15T14:30:00Z")), true, "09:30 EST in winter")
+})
+
+test("the front ES quarter rolls eight days before its third-Friday expiry", () => {
+  assert.equal(frontQuarterlyMonth(Date.parse("2026-09-28T12:00:00Z")), "202612")
+  assert.equal(frontQuarterlyMonth(Date.parse("2026-12-09T12:00:00Z")), "202612", "Dec expires Fri 18th")
+  assert.equal(frontQuarterlyMonth(Date.parse("2026-12-10T12:00:00Z")), "202703")
+  assert.equal(frontQuarterlyMonth(Date.parse("2026-03-01T12:00:00Z")), "202603")
+})
+
+test("pre-market, SPX follows the ES move since settlement instead of a stale index print", async () => {
+  const log: string[] = []
+  const ib = fakeIb(
+    {
+      replies: {
+        SPX: [[4, 7743.41]], // yesterday's close, re-sent as "last" before the open
+        ES: [[9, 7803.75], [4, 7764.5]],
+        QQQ: [[1, 734.62], [2, 734.64]],
+      },
+    },
+    log
+  )
+  const { spots, errors } = await fetchIbLiveSpots(CFG, { load: async () => ib, env: LOCAL, now: () => PRE })
+  assert.deepEqual(errors, {})
+  assert.equal(spots.spx?.label, "ES move since settle")
+  assert.ok(Math.abs((spots.spx?.ratio ?? 0) - 7764.5 / 7803.75) < 1e-12)
+  assert.ok(log.some((l) => l.startsWith("req") && l.includes("ES")), "ES is requested")
+})
+
+test("pre-market with no ES price, SPX is reported as not live rather than using the stale print", async () => {
+  const ib = fakeIb({ replies: { SPX: [[4, 7743.41]], QQQ: [[1, 734.62], [2, 734.64]] } })
+  const { spots, errors } = await fetchIbLiveSpots(CFG, { load: async () => ib, env: LOCAL, now: () => PRE })
+  assert.strictEqual(spots.spx, undefined)
+  assert.match(errors.spx ?? "", /not live outside 09:30-16:00 ET/)
+  assert.ok(spots.nq, "QQQ trades pre-market")
 })

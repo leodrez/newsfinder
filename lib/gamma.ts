@@ -214,6 +214,12 @@ export interface GammaBook {
 export interface LiveSpot {
   chainSymbol: string
   price: number
+  /**
+   * The chain's move as a ratio, when no live price exists in the chain's own
+   * units — e.g. pre-market, where the ES move since settlement stands in for
+   * the SPX index, which only prints during the session. Wins over `price`.
+   */
+  ratio?: number
   /** Epoch ms the quote was taken. */
   ts: number
   label: string
@@ -242,10 +248,11 @@ export function buildBook(chains: CboeChain[], now: Date, strikeBucket = 0): Gam
  * a quote that far off is a bad print, not a market move.
  */
 function liveMultiplier(book: GammaBook, live: LiveSpot | null | undefined): number | null {
-  if (!live || !(live.price > 0)) return null
+  if (!live) return null
   const tally = book.tallies.find((t) => t.symbol === live.chainSymbol)
   if (!tally || !(tally.spot > 0)) return null
-  const m = live.price / tally.spot
+  const m = live.ratio != null ? live.ratio : live.price / tally.spot
+  if (!(m > 0)) return null
   return Math.abs(m - 1) <= PROFILE_HALF_WIDTH - MAX_FLIP_DISTANCE ? m : null
 }
 

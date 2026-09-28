@@ -1,5 +1,6 @@
 import { evaluateGammaBooks, fetchGammaBooks } from "./gamma"
 import { fetchIbLiveSpots, probeIb } from "./ib-quotes"
+import { DEFAULT_BOOK_CACHE_PATH, readBookCache, writeBookCache } from "./book-cache"
 import type { GammaBooks, GammaSet } from "./gamma"
 import type { IbProbe } from "./ib-quotes"
 
@@ -24,16 +25,22 @@ export interface SourcedGammaSet extends GammaSet {
 /**
  * The priced books change only when Cboe rebuilds its chains, so a live panel
  * refreshing every minute re-reads the same book instead of re-downloading
- * ~25MB. Kept per process: under `vercel dev` that is the local server.
+ * ~25MB. Kept on disk: under `vercel dev` each request is a new process.
  */
 const BOOK_TTL_MS = 5 * 60 * 1000
-let cached: { books: GammaBooks; at: number } | null = null
 
 async function books(now: Date, useCache: boolean): Promise<GammaBooks> {
-  if (useCache && cached && now.getTime() - cached.at < BOOK_TTL_MS) return cached.books
+  if (useCache) {
+    const hit = await readBookCache(DEFAULT_BOOK_CACHE_PATH, now.getTime(), BOOK_TTL_MS)
+    if (hit) return hit
+  }
   const fresh = await fetchGammaBooks(now)
   // Only a complete fetch is worth reusing; a failed index should retry next time.
-  if (!fresh.errors.spx && !fresh.errors.nq) cached = { books: fresh, at: now.getTime() }
+  if (!fresh.errors.spx && !fresh.errors.nq) {
+    await writeBookCache(DEFAULT_BOOK_CACHE_PATH, fresh, now.getTime()).catch((err) =>
+      console.warn("[gamma] Book cache write failed:", (err as Error).message)
+    )
+  }
   return fresh
 }
 
